@@ -1,0 +1,1 @@
+#ai-chat-extension-root{all:initial;position:fixed;z-index:2147483647}#ai-chat-extension-root *{box-sizing:border-box}body.ai-chat-sidebar-open{overflow-x:hidden}body.ai-chat-sidebar-open>*:not(#ai-chat-extension-root){position:relative}body.ai-chat-sidebar-open>[style*="position: fixed"]:not(#ai-chat-extension-root){transform:translate(400px);transition:transform .3s ease}

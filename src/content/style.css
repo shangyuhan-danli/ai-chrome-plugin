@@ -1,0 +1,27 @@
+/* Content script styles */
+#ai-chat-extension-root {
+  all: initial;
+  position: fixed;
+  z-index: 2147483647;
+}
+
+#ai-chat-extension-root * {
+  box-sizing: border-box;
+}
+
+/* 侧边栏模式下的页面布局调整 */
+body.ai-chat-sidebar-open {
+  /* 页面左移动画已在 JS 中设置 */
+  overflow-x: hidden;
+}
+
+/* 防止固定定位元素跟随页面移动 */
+body.ai-chat-sidebar-open > *:not(#ai-chat-extension-root) {
+  position: relative;
+}
+
+/* 保持某些特殊元素不受影响 */
+body.ai-chat-sidebar-open > [style*="position: fixed"]:not(#ai-chat-extension-root) {
+  transform: translateX(400px);
+  transition: transform 0.3s ease;
+}
