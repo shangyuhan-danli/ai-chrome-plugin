@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>侧边栏页面左移效果演示</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      transition: transform 0.3s ease;
+      overflow-x: hidden;
+    }
+
+    /* 顶部导航栏 */
+    .navbar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 60px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      display: flex;
+      align-items: center;
+      padding: 0 20px;
+      z-index: 1000;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+
+    .navbar h1 {
+      font-size: 20px;
+      font-weight: 600;
+    }
+
+    /* 主内容区 */
+    .main-content {
+      margin-top: 60px;
+      padding: 40px;
+      max-width: 1200px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+
+    .card {
+      background: white;
+      border-radius: 12px;
+      padding: 30px;
+      margin-bottom: 20px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+
+    .card h2 {
+      color: #667eea;
+      margin-bottom: 15px;
+      font-size: 24px;
+    }
+
+    .card p {
+      line-height: 1.6;
+      color: #4b5563;
+      margin-bottom: 10px;
+    }
+
+    /* 控制按钮 */
+    .controls {
+      position: fixed;
+      bottom: 30px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 15px;
+      z-index: 2000;
+    }
+
+    .btn {
+      padding: 12px 24px;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+    }
+
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 16px rgba(102, 126, 234, 0.4);
+    }
+
+    .btn-secondary {
+      background: white;
+      color: #667eea;
+      border: 2px solid #667eea;
+    }
+
+    .btn-secondary:hover {
+      background: #f3f4f6;
+    }
+
+    /* 侧边栏 */
+    .sidebar {
+      position: fixed;
+      top: 0;
+      right: 0;
+      width: 400px;
+      height: 100vh;
+      background: white;
+      box-shadow: -2px 0 8px rgba(0,0,0,0.1);
+      transform: translateX(100%);
+      transition: transform 0.3s ease;
+      z-index: 2147483647;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .sidebar.open {
+      transform: translateX(0);
+    }
+
+    .sidebar-header {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .sidebar-header h3 {
+      font-size: 18px;
+      font-weight: 600;
+    }
+
+    .close-btn {
+      background: rgba(255,255,255,0.2);
+      border: none;
+      color: white;
+      width: 32px;
+      height: 32px;
+      border-radius: 6px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.2s;
+    }
+
+    .close-btn:hover {
+      background: rgba(255,255,255,0.3);
+    }
+
+    .sidebar-content {
+      flex: 1;
+      padding: 20px;
+      overflow-y: auto;
+    }
+
+    .chat-message {
+      margin-bottom: 20px;
+      padding: 15px;
+      border-radius: 8px;
+      background: #f3f4f6;
+    }
+
+    .chat-message.user {
+      background: #dbeafe;
+      margin-left: 40px;
+    }
+
+    .chat-message.assistant {
+      background: #f3f4f6;
+      margin-right: 40px;
+    }
+
+    /* 页面左移状态 */
+    body.sidebar-open {
+      transform: translateX(-400px);
+      width: calc(100% + 400px);
+    }
+
+    /* 固定定位元素补偿 */
+    body.sidebar-open .navbar {
+      transform: translateX(400px);
+      transition: transform 0.3s ease;
+    }
+
+    body.sidebar-open .controls {
+      transform: translateX(calc(-50% + 400px));
+      transition: transform 0.3s ease;
+    }
+
+    /* 状态指示器 */
+    .status {
+      position: fixed;
+      top: 80px;
+      right: 20px;
+      background: white;
+      padding: 15px 20px;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+      z-index: 1500;
+      font-size: 14px;
+      transition: all 0.3s ease;
+    }
+
+    body.sidebar-open .status {
+      right: 420px;
+    }
+
+    .status-item {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 8px;
+      gap: 20px;
+    }
+
+    .status-item:last-child {
+      margin-bottom: 0;
+    }
+
+    .status-label {
+      color: #6b7280;
+      font-weight: 500;
+    }
+
+    .status-value {
+      color: #667eea;
+      font-weight: 600;
+      font-family: monospace;
+    }
+
+    .highlight {
+      background: #fef3c7;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-weight: 600;
+    }
+  </style>
+</head>
+<body>
+  <!-- 顶部导航栏 -->
+  <div class="navbar">
+    <h1>🎨 侧边栏页面左移效果演示</h1>
+  </div>
+
+  <!-- 状态指示器 -->
+  <div class="status">
+    <div class="status-item">
+      <span class="status-label">Body Transform:</span>
+      <span class="status-value" id="transformValue">none</span>
+    </div>
+    <div class="status-item">
+      <span class="status-label">Body Width:</span>
+      <span class="status-value" id="widthValue">100%</span>
+    </div>
+    <div class="status-item">
+      <span class="status-label">Sidebar State:</span>
+      <span class="status-value" id="sidebarState">closed</span>
+    </div>
+  </div>
+
+  <!-- 主内容区 -->
+  <div class="main-content">
+    <div class="card">
+      <h2>📖 功能说明</h2>
+      <p>这是一个演示页面，展示了浏览器扩展中<span class="highlight">侧边栏模式下页面自动左移</span>的效果。</p>
+      <p>点击下方的"打开侧边栏"按钮，观察以下变化：</p>
+      <ul style="margin-left: 20px; line-height: 1.8;">
+        <li>✅ 整个页面向左平移 400px（包括这段文字）</li>
+        <li>✅ 侧边栏从右侧滑入，固定在右侧</li>
+        <li>✅ 顶部导航栏保持在原位（通过 transform 补偿）</li>
+        <li>✅ 控制按钮保持在屏幕中央（通过 transform 补偿）</li>
+        <li>✅ 右上角状态指示器实时显示 CSS 属性值</li>
+        <li>✅ 所有动画平滑过渡（0.3s ease）</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h2>🔧 技术实现</h2>
+      <p><strong>核心原理：</strong>使用 CSS Transform 实现页面左移</p>
+      <pre style="background: #f3f4f6; padding: 15px; border-radius: 8px; overflow-x: auto; font-size: 13px; line-height: 1.6;">
+// 打开侧边栏时
+document.body.style.transform = 'translateX(-400px)'
+document.body.style.transition = 'transform 0.3s ease'
+document.body.style.width = 'calc(100% + 400px)'
+document.body.classList.add('sidebar-open')
+
+// 关闭侧边栏时
+document.body.style.transform = ''
+document.body.style.width = ''
+document.body.classList.remove('sidebar-open')</pre>
+    </div>
+
+    <div class="card">
+      <h2>🎯 优势分析</h2>
+      <p><strong>为什么使用 Transform 而不是 Margin？</strong></p>
+      <table style="width: 100%; border-collapse: collapse; margin-top: 15px;">
+        <thead>
+          <tr style="background: #f3f4f6;">
+            <th style="padding: 12px; text-align: left; border: 1px solid #e5e7eb;">方案</th>
+            <th style="padding: 12px; text-align: left; border: 1px solid #e5e7eb;">性能</th>
+            <th style="padding: 12px; text-align: left; border: 1px solid #e5e7eb;">动画</th>
+            <th style="padding: 12px; text-align: left; border: 1px solid #e5e7eb;">重排</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td style="padding: 12px; border: 1px solid #e5e7eb;"><strong>transform</strong> ✅</td>
+            <td style="padding: 12px; border: 1px solid #e5e7eb; color: #10b981;">GPU 加速</td>
+            <td style="padding: 12px; border: 1px solid #e5e7eb; color: #10b981;">60fps 流畅</td>
+            <td style="padding: 12px; border: 1px solid #e5e7eb; color: #10b981;">不触发</td>
+          </tr>
+          <tr>
+            <td style="padding: 12px; border: 1px solid #e5e7eb;"><strong>margin-left</strong></td>
+            <td style="padding: 12px; border: 1px solid #e5e7eb; color: #ef4444;">CPU 计算</td>
+            <td style="padding: 12px; border: 1px solid #e5e7eb; color: #ef4444;">可能卡顿</td>
+            <td style="padding: 12px; border: 1px solid #e5e7eb; color: #ef4444;">触发重排</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <h2>💡 使用场景</h2>
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px; margin-top: 15px;">
+        <div style="padding: 15px; background: #f0f9ff; border-radius: 8px; border-left: 4px solid #3b82f6;">
+          <strong>📝 代码审查</strong>
+          <p style="margin-top: 8px; font-size: 14px;">左侧查看代码，右侧使用 AI 助手讨论</p>
+        </div>
+        <div style="padding: 15px; background: #f0fdf4; border-radius: 8px; border-left: 4px solid #10b981;">
+          <strong>📚 文档阅读</strong>
+          <p style="margin-top: 8px; font-size: 14px;">左侧阅读文档，右侧随时提问</p>
+        </div>
+        <div style="padding: 15px; background: #fef3c7; border-radius: 8px; border-left: 4px solid #f59e0b;">
+          <strong>🎥 视频学习</strong>
+          <p style="margin-top: 8px; font-size: 14px;">左侧播放视频，右侧记录笔记</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>🎨 视觉效果对比</h2>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 15px;">
+        <div>
+          <h4 style="margin-bottom: 10px; color: #6b7280;">悬浮窗模式</h4>
+          <div style="border: 2px solid #e5e7eb; border-radius: 8px; padding: 20px; position: relative; height: 200px; background: #fafafa;">
+            <div style="position: absolute; top: 10px; left: 10px; right: 10px; bottom: 10px; border: 2px dashed #d1d5db; display: flex; align-items: center; justify-content: center; color: #9ca3af;">
+              网页内容（不移动）
+            </div>
+            <div style="position: absolute; right: 30px; top: 50%; transform: translateY(-50%); width: 80px; height: 120px; background: white; border: 2px solid #667eea; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 12px; color: #667eea;">
+              悬浮窗
+            </div>
+          </div>
+        </div>
+        <div>
+          <h4 style="margin-bottom: 10px; color: #6b7280;">侧边栏模式</h4>
+          <div style="border: 2px solid #e5e7eb; border-radius: 8px; padding: 20px; position: relative; height: 200px; background: #fafafa; overflow: hidden;">
+            <div style="position: absolute; top: 10px; left: -60px; bottom: 10px; width: 200px; border: 2px dashed #d1d5db; display: flex; align-items: center; justify-content: center; color: #9ca3af; font-size: 12px;">
+              网页内容<br/>（左移 400px）
+            </div>
+            <div style="position: absolute; right: 10px; top: 10px; bottom: 10px; width: 100px; background: white; border: 2px solid #667eea; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 12px; color: #667eea;">
+              侧边栏<br/>(固定)
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 控制按钮 -->
+  <div class="controls">
+    <button class="btn btn-primary" id="openBtn">🚀 打开侧边栏</button>
+    <button class="btn btn-secondary" id="closeBtn" style="display: none;">❌ 关闭侧边栏</button>
+  </div>
+
+  <!-- 侧边栏 -->
+  <div class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <h3>💬 AI Chat Assistant</h3>
+      <button class="close-btn" id="closeBtnInSidebar">✕</button>
+    </div>
+    <div class="sidebar-content">
+      <div class="chat-message assistant">
+        <strong>AI Assistant:</strong>
+        <p style="margin-top: 8px;">你好！我是 AI 助手。注意观察左侧的页面内容，它已经向左移动了 400px，为我腾出了空间。</p>
+      </div>
+      <div class="chat-message user">
+        <strong>You:</strong>
+        <p style="margin-top: 8px;">太棒了！页面左移的动画非常流畅，而且顶部导航栏保持在原位。</p>
+      </div>
+      <div class="chat-message assistant">
+        <strong>AI Assistant:</strong>
+        <p style="margin-top: 8px;">是的！这是通过 CSS Transform 实现的。你可以查看右上角的状态指示器，实时显示了 body 元素的 transform 和 width 属性值。</p>
+      </div>
+      <div class="chat-message user">
+        <strong>You:</strong>
+        <p style="margin-top: 8px;">为什么使用 transform 而不是 margin？</p>
+      </div>
+      <div class="chat-message assistant">
+        <strong>AI Assistant:</strong>
+        <p style="margin-top: 8px;">因为 transform 使用 GPU 加速，不会触发页面重排（reflow），性能更好，动画更流畅。而 margin 会触发重排，可能导致卡顿。</p>
+      </div>
+      <div class="chat-message user">
+        <strong>You:</strong>
+        <p style="margin-top: 8px;">明白了！这个实现真的很优雅。</p>
+      </div>
+      <div class="chat-message assistant">
+        <strong>AI Assistant:</strong>
+        <p style="margin-top: 8px;">谢谢！你可以尝试关闭侧边栏，观察页面如何平滑地恢复到原位。点击右上角的 ✕ 按钮或者下方的"关闭侧边栏"按钮都可以。</p>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const sidebar = document.getElementById('sidebar')
+    const openBtn = document.getElementById('openBtn')
+    const closeBtn = document.getElementById('closeBtn')
+    const closeBtnInSidebar = document.getElementById('closeBtnInSidebar')
+    const transformValue = document.getElementById('transformValue')
+    const widthValue = document.getElementById('widthValue')
+    const sidebarState = document.getElementById('sidebarState')
+
+    function updateStatus() {
+      const transform = document.body.style.transform || 'none'
+      const width = document.body.style.width || '100%'
+      const isOpen = document.body.classList.contains('sidebar-open')
+
+      transformValue.textContent = transform
+      widthValue.textContent = width
+      sidebarState.textContent = isOpen ? 'open' : 'closed'
+      sidebarState.style.color = isOpen ? '#10b981' : '#ef4444'
+    }
+
+    function openSidebar() {
+      // 页面左移
+      document.body.style.transform = 'translateX(-400px)'
+      document.body.style.transition = 'transform 0.3s ease'
+      document.body.style.width = 'calc(100% + 400px)'
+      document.body.classList.add('sidebar-open')
+
+      // 显示侧边栏
+      sidebar.classList.add('open')
+
+      // 切换按钮
+      openBtn.style.display = 'none'
+      closeBtn.style.display = 'block'
+
+      updateStatus()
+
+      console.log('✅ 侧边栏已打开')
+      console.log('📊 Body transform:', document.body.style.transform)
+      console.log('📊 Body width:', document.body.style.width)
+    }
+
+    function closeSidebar() {
+      // 恢复页面位置
+      document.body.style.transform = ''
+      document.body.style.transition = 'transform 0.3s ease'
+      document.body.style.width = ''
+      document.body.classList.remove('sidebar-open')
+
+      // 隐藏侧边栏
+      sidebar.classList.remove('open')
+
+      // 切换按钮
+      openBtn.style.display = 'block'
+      closeBtn.style.display = 'none'
+
+      updateStatus()
+
+      console.log('❌ 侧边栏已关闭')
+      console.log('📊 Body transform:', document.body.style.transform || 'none')
+      console.log('📊 Body width:', document.body.style.width || '100%')
+    }
+
+    openBtn.addEventListener('click', openSidebar)
+    closeBtn.addEventListener('click', closeSidebar)
+    closeBtnInSidebar.addEventListener('click', closeSidebar)
+
+    // 初始化状态
+    updateStatus()
+
+    // 键盘快捷键
+    document.addEventListener('keydown', (e) => {
+      if (e.ctrlKey && e.shiftKey && e.key === 'S') {
+        e.preventDefault()
+        if (document.body.classList.contains('sidebar-open')) {
+          closeSidebar()
+        } else {
+          openSidebar()
+        }
+      }
+    })
+
+    console.log('💡 提示: 按 Ctrl+Shift+S 可以快速切换侧边栏')
+  </script>
+</body>
+</html>
