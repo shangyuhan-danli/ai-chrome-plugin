@@ -31,13 +31,6 @@
       <div v-if="activeTab === 'sessions'" class="content-section">
         <div class="section-header">
           <h2>会话管理</h2>
-          <button class="btn-primary" @click="createNewSession">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-              <line x1="12" y1="5" x2="12" y2="19" stroke-width="2" stroke-linecap="round"/>
-              <line x1="5" y1="12" x2="19" y2="12" stroke-width="2" stroke-linecap="round"/>
-            </svg>
-            新建会话
-          </button>
         </div>
 
         <div class="sessions-list">
@@ -46,7 +39,6 @@
               <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
             <p>暂无会话记录</p>
-            <button class="btn-secondary" @click="createNewSession">创建第一个会话</button>
           </div>
 
           <div v-for="session in sessions" :key="session.id" class="session-card">
@@ -315,18 +307,6 @@ const loadSettings = async () => {
     }
   } catch (error) {
     console.error('加载设置失败:', error)
-  }
-}
-
-const createNewSession = async () => {
-  try {
-    await chrome.runtime.sendMessage({
-      type: 'CREATE_SESSION',
-      payload: { title: `新对话 ${new Date().toLocaleString('zh-CN')}` }
-    })
-    await loadSessions()
-  } catch (error) {
-    console.error('创建会话失败:', error)
   }
 }
 

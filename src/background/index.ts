@@ -1,14 +1,48 @@
 // Background Service Worker
 import { chatDB } from '../utils/db'
+import { apiService } from '../utils/api'
 import type { ChromeMessage } from '../utils/types'
 
-// 初始化数据库
+// 初始化数据库和 API 配置
 chatDB.init().catch(console.error)
+
+// 从存储中加载 API 配置
+async function loadApiConfig() {
+  const apiEndpoint = await chatDB.getSetting('apiEndpoint')
+  const apiKey = await chatDB.getSetting('apiKey')
+  if (apiEndpoint) {
+    apiService.setBaseUrl(apiEndpoint)
+  }
+  if (apiKey) {
+    apiService.setToken(apiKey)
+  }
+}
+loadApiConfig().catch(console.error)
 
 // 监听来自content script和popup的消息
 chrome.runtime.onMessage.addListener((message: ChromeMessage, sender, sendResponse) => {
   handleMessage(message, sender).then(sendResponse)
   return true // 保持消息通道开启
+})
+
+// 监听流式会话的长连接
+chrome.runtime.onConnect.addListener((port) => {
+  if (port.name === 'chat-stream') {
+    port.onMessage.addListener(async (request) => {
+      const { agentId, sessionId, message, context } = request
+
+      // 保存用户消息到本地
+      await chatDB.addMessage(sessionId, 'user', message)
+
+      // 调用流式 API
+      await apiService.chatStream(
+        { agentId, sessionId: String(sessionId), message, context },
+        (content) => port.postMessage({ type: 'content', content }),
+        (messageId) => port.postMessage({ type: 'done', messageId }),
+        (error) => port.postMessage({ type: 'error', error: error.message })
+      )
+    })
+  }
 })
 
 async function handleMessage(message: ChromeMessage, sender: chrome.runtime.MessageSender) {
@@ -24,16 +58,22 @@ async function handleMessage(message: ChromeMessage, sender: chrome.runtime.Mess
         return { success: true }
 
       case 'SEND_MESSAGE':
-        // 处理AI消息
-        const { sessionId, content } = payload
+        // 处理AI消息 (非流式，保留兼容)
+        const { sessionId, content, agentId } = payload
 
         // 保存用户消息
         await chatDB.addMessage(sessionId, 'user', content)
 
-        // 模拟AI回复（实际应该调用AI API）
-        const aiResponse = await simulateAIResponse(content)
-        await chatDB.addMessage(sessionId, 'assistant', aiResponse)
+        // 如果有 agentId，使用真实 API；否则使用模拟响应
+        let aiResponse: string
+        if (agentId) {
+          // 使用同步方式获取完整响应
+          aiResponse = await getFullResponse(agentId, sessionId, content, payload.context)
+        } else {
+          aiResponse = await simulateAIResponse(content)
+        }
 
+        await chatDB.addMessage(sessionId, 'assistant', aiResponse)
         return { success: true, response: aiResponse }
 
       case 'GET_MESSAGES':
@@ -54,11 +94,36 @@ async function handleMessage(message: ChromeMessage, sender: chrome.runtime.Mess
 
       case 'SAVE_SETTING':
         await chatDB.saveSetting(payload.key, payload.value)
+        // 如果是 API 配置，同步更新 apiService
+        if (payload.key === 'apiEndpoint') {
+          apiService.setBaseUrl(payload.value)
+        } else if (payload.key === 'apiKey') {
+          apiService.setToken(payload.value)
+        }
         return { success: true }
 
       case 'GET_SETTING':
         const value = await chatDB.getSetting(payload.key)
         return { success: true, data: value }
+
+      // 新增: 获取 Agent 列表
+      case 'GET_AGENTS':
+        const agentsResult = await apiService.getAgents(payload?.url)
+        return { success: true, data: agentsResult }
+
+      // 新增: 获取会话历史 (从远程服务)
+      case 'GET_HISTORY':
+        const historyResult = await apiService.getHistory(
+          payload.sessionId,
+          payload.page,
+          payload.pageSize
+        )
+        return { success: true, data: historyResult }
+
+      // 新增: 意图识别
+      case 'RECOGNIZE_INTENT':
+        const intentResult = await apiService.recognizeIntent(payload.url)
+        return { success: true, data: intentResult }
 
       default:
         return { success: false, error: 'Unknown message type' }
@@ -67,6 +132,25 @@ async function handleMessage(message: ChromeMessage, sender: chrome.runtime.Mess
     console.error('Background error:', error)
     return { success: false, error: String(error) }
   }
+}
+
+// 获取完整响应 (非流式)
+async function getFullResponse(
+  agentId: string,
+  sessionId: number,
+  message: string,
+  context?: { url: string; title: string }
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    let fullContent = ''
+
+    apiService.chatStream(
+      { agentId, sessionId: String(sessionId), message, context },
+      (content) => { fullContent += content },
+      () => resolve(fullContent),
+      (error) => reject(error)
+    )
+  })
 }
 
 // 模拟AI响应（实际项目中应该调用真实的AI API）

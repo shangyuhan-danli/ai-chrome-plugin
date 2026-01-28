@@ -15,34 +15,6 @@
     </div>
 
     <div class="content">
-      <!-- 统计信息 -->
-      <div class="stats-section">
-        <div class="stat-item">
-          <div class="stat-icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-          </div>
-          <div class="stat-info">
-            <div class="stat-value">{{ sessionCount }}</div>
-            <div class="stat-label">会话数</div>
-          </div>
-        </div>
-        <div class="stat-item">
-          <div class="stat-icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-              <path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-          </div>
-          <div class="stat-info">
-            <div class="stat-value">{{ messageCount }}</div>
-            <div class="stat-label">消息数</div>
-          </div>
-        </div>
-      </div>
-
-      <div class="divider"></div>
-
       <!-- 快捷操作 -->
       <div class="actions-section">
         <button class="action-btn primary" @click="openChat">
@@ -65,14 +37,6 @@
             <path d="M12 1v6m0 6v6M1 12h6m6 0h6" stroke-width="2" stroke-linecap="round"/>
           </svg>
           <span>设置与管理</span>
-        </button>
-
-        <button class="action-btn secondary" @click="newSession">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-            <line x1="12" y1="5" x2="12" y2="19" stroke-width="2" stroke-linecap="round"/>
-            <line x1="5" y1="12" x2="19" y2="12" stroke-width="2" stroke-linecap="round"/>
-          </svg>
-          <span>新建会话</span>
         </button>
       </div>
 
@@ -105,43 +69,6 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
-
-const sessionCount = ref(0)
-const messageCount = ref(0)
-
-onMounted(async () => {
-  // 加载统计信息
-  loadStats()
-})
-
-const loadStats = async () => {
-  try {
-    const sessionsResponse = await chrome.runtime.sendMessage({
-      type: 'GET_SESSIONS'
-    })
-    if (sessionsResponse?.success) {
-      sessionCount.value = sessionsResponse.data?.length || 0
-    }
-
-    // 获取所有消息数量
-    const sessions = sessionsResponse?.data || []
-    let totalMessages = 0
-    for (const session of sessions) {
-      const messagesResponse = await chrome.runtime.sendMessage({
-        type: 'GET_MESSAGES',
-        payload: { sessionId: session.id }
-      })
-      if (messagesResponse?.success) {
-        totalMessages += messagesResponse.data?.length || 0
-      }
-    }
-    messageCount.value = totalMessages
-  } catch (error) {
-    console.error('加载统计信息失败:', error)
-  }
-}
-
 const openChat = async () => {
   try {
     // 获取或创建会话
@@ -233,21 +160,6 @@ const openFullscreen = async () => {
 const openOptions = () => {
   chrome.runtime.openOptionsPage()
 }
-
-const newSession = async () => {
-  try {
-    const response = await chrome.runtime.sendMessage({
-      type: 'CREATE_SESSION',
-      payload: { title: `新对话 ${new Date().toLocaleString('zh-CN')}` }
-    })
-    if (response?.success) {
-      // 打开聊天窗口
-      await openChat()
-    }
-  } catch (error) {
-    console.error('创建会话失败:', error)
-  }
-}
 </script>
 
 <style scoped>
@@ -300,56 +212,6 @@ const newSession = async () => {
 
 .content {
   padding: 20px;
-}
-
-.stats-section {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
-  margin-bottom: 16px;
-}
-
-.stat-item {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 16px;
-  background: linear-gradient(135deg, #f6f8fb 0%, #f1f3f9 100%);
-  border-radius: 12px;
-}
-
-.stat-icon {
-  width: 40px;
-  height: 40px;
-  background: white;
-  border-radius: 10px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
-.stat-icon svg {
-  width: 20px;
-  height: 20px;
-  stroke: #667eea;
-}
-
-.stat-info {
-  flex: 1;
-}
-
-.stat-value {
-  font-size: 24px;
-  font-weight: 700;
-  color: #1f2937;
-  line-height: 1;
-}
-
-.stat-label {
-  font-size: 12px;
-  color: #6b7280;
-  margin-top: 4px;
 }
 
 .divider {

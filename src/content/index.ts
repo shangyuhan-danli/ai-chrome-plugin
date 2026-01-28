@@ -6,9 +6,32 @@ let currentSessionId: number | null = null
 let isPinned: boolean = false
 let styleElement: HTMLStyleElement | null = null
 
+// 获取当前页面信息
+function getPageInfo() {
+  return {
+    url: window.location.href,
+    title: document.title
+  }
+}
+
 function createChatFrame(sessionId: number) {
+  const pageInfo = getPageInfo()
+  const chatUrl = chrome.runtime.getURL(
+    `chat.html?sessionId=${sessionId}&pageUrl=${encodeURIComponent(pageInfo.url)}&pageTitle=${encodeURIComponent(pageInfo.title)}`
+  )
+
   if (chatFrame) {
-    chatFrame.src = chrome.runtime.getURL(`chat.html?sessionId=${sessionId}`)
+    chatFrame.src = chatUrl
+    // 通知 chat 页面更新页面信息
+    setTimeout(() => {
+      if (chatFrame?.contentWindow) {
+        chatFrame.contentWindow.postMessage({
+          type: 'PAGE_INFO',
+          url: pageInfo.url,
+          title: pageInfo.title
+        }, '*')
+      }
+    }, 500)
     return
   }
 
@@ -29,7 +52,7 @@ function createChatFrame(sessionId: number) {
   `
 
   chatFrame = document.createElement('iframe')
-  chatFrame.src = chrome.runtime.getURL(`chat.html?sessionId=${sessionId}`)
+  chatFrame.src = chatUrl
   chatFrame.style.cssText = `
     width: 100%;
     height: 100%;
@@ -93,6 +116,24 @@ function createChatFrame(sessionId: number) {
     chrome.storage.local.set({ chatPinned: true, chatSessionId: sessionId })
   }
 }
+
+// 监听页面 URL 变化 (SPA 应用)
+let lastUrl = window.location.href
+const urlObserver = new MutationObserver(() => {
+  if (window.location.href !== lastUrl) {
+    lastUrl = window.location.href
+    // URL 变化时通知 chat 页面
+    if (chatFrame?.contentWindow) {
+      const pageInfo = getPageInfo()
+      chatFrame.contentWindow.postMessage({
+        type: 'PAGE_INFO',
+        url: pageInfo.url,
+        title: pageInfo.title
+      }, '*')
+    }
+  }
+})
+urlObserver.observe(document.body, { childList: true, subtree: true })
 
 function handleChatMessage(event: MessageEvent) {
   if (event.source !== chatFrame?.contentWindow) return
