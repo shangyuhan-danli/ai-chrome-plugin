@@ -96,13 +96,40 @@
 
           <div class="form-group">
             <label>模型</label>
-            <select v-model="apiSettings.model" class="form-select">
-              <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
-              <option value="gpt-4">GPT-4</option>
-              <option value="gpt-4-turbo">GPT-4 Turbo</option>
-              <option value="claude-3-sonnet">Claude 3 Sonnet</option>
-              <option value="claude-3-opus">Claude 3 Opus</option>
+            <select v-model="apiSettings.model" class="form-select" @change="onModelChange">
+              <optgroup label="OpenAI">
+                <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
+                <option value="gpt-4">GPT-4</option>
+                <option value="gpt-4-turbo">GPT-4 Turbo</option>
+                <option value="gpt-4o">GPT-4o</option>
+                <option value="gpt-4o-mini">GPT-4o Mini</option>
+              </optgroup>
+              <optgroup label="Anthropic">
+                <option value="claude-3-sonnet">Claude 3 Sonnet</option>
+                <option value="claude-3-opus">Claude 3 Opus</option>
+                <option value="claude-3-haiku">Claude 3 Haiku</option>
+                <option value="claude-3.5-sonnet">Claude 3.5 Sonnet</option>
+              </optgroup>
+              <optgroup label="其他">
+                <option value="deepseek-chat">DeepSeek Chat</option>
+                <option value="deepseek-coder">DeepSeek Coder</option>
+                <option value="qwen-turbo">Qwen Turbo</option>
+                <option value="qwen-plus">Qwen Plus</option>
+                <option value="custom">自定义模型...</option>
+              </optgroup>
             </select>
+            <p class="form-hint">选择要使用的 AI 模型</p>
+          </div>
+
+          <div class="form-group" v-if="apiSettings.model === 'custom'">
+            <label>自定义模型名称</label>
+            <input
+              type="text"
+              v-model="apiSettings.customModel"
+              placeholder="输入模型名称，如 llama-3-70b"
+              class="form-input"
+            />
+            <p class="form-hint">输入你的自定义模型标识符</p>
           </div>
 
           <div class="form-actions">
@@ -232,8 +259,15 @@ const totalMessages = ref(0)
 const apiSettings = ref({
   endpoint: '',
   apiKey: '',
-  model: 'gpt-3.5-turbo'
+  model: 'gpt-3.5-turbo',
+  customModel: ''
 })
+
+const onModelChange = () => {
+  if (apiSettings.value.model !== 'custom') {
+    apiSettings.value.customModel = ''
+  }
+}
 
 const generalSettings = ref({
   displayMode: 'float' as 'float' | 'sidebar',
@@ -302,8 +336,30 @@ const loadSettings = async () => {
       type: 'GET_SETTING',
       payload: { key: 'model' }
     })
+    const isCustomModelResponse = await chrome.runtime.sendMessage({
+      type: 'GET_SETTING',
+      payload: { key: 'isCustomModel' }
+    })
+
     if (modelResponse?.success && modelResponse.data) {
-      apiSettings.value.model = modelResponse.data
+      // 检查是否是自定义模型
+      if (isCustomModelResponse?.success && isCustomModelResponse.data) {
+        apiSettings.value.model = 'custom'
+        apiSettings.value.customModel = modelResponse.data
+      } else {
+        // 检查模型是否在预设列表中
+        const presetModels = [
+          'gpt-3.5-turbo', 'gpt-4', 'gpt-4-turbo', 'gpt-4o', 'gpt-4o-mini',
+          'claude-3-sonnet', 'claude-3-opus', 'claude-3-haiku', 'claude-3.5-sonnet',
+          'deepseek-chat', 'deepseek-coder', 'qwen-turbo', 'qwen-plus'
+        ]
+        if (presetModels.includes(modelResponse.data)) {
+          apiSettings.value.model = modelResponse.data
+        } else {
+          apiSettings.value.model = 'custom'
+          apiSettings.value.customModel = modelResponse.data
+        }
+      }
     }
   } catch (error) {
     console.error('加载设置失败:', error)
@@ -339,9 +395,17 @@ const saveApiSettings = async () => {
       type: 'SAVE_SETTING',
       payload: { key: 'apiEndpoint', value: apiSettings.value.endpoint }
     })
+    // 如果是自定义模型，保存自定义模型名称
+    const modelToSave = apiSettings.value.model === 'custom'
+      ? apiSettings.value.customModel
+      : apiSettings.value.model
     await chrome.runtime.sendMessage({
       type: 'SAVE_SETTING',
-      payload: { key: 'model', value: apiSettings.value.model }
+      payload: { key: 'model', value: modelToSave }
+    })
+    await chrome.runtime.sendMessage({
+      type: 'SAVE_SETTING',
+      payload: { key: 'isCustomModel', value: apiSettings.value.model === 'custom' }
     })
     alert('API 设置已保存')
   } catch (error) {

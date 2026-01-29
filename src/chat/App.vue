@@ -8,9 +8,25 @@
               <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
           </div>
-          <h3>AI Chat Assistant</h3>
+          <div class="header-title">
+            <h3>AI Chat Assistant</h3>
+            <span v-if="currentModel" class="model-badge">{{ currentModel }}</span>
+          </div>
         </div>
         <div class="header-right">
+          <button class="icon-btn" @click="openHelp" title="帮助文档">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+              <circle cx="12" cy="12" r="10" stroke-width="2"/>
+              <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              <line x1="12" y1="17" x2="12.01" y2="17" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+          </button>
+          <button class="icon-btn" @click="openSettings" title="设置">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+              <circle cx="12" cy="12" r="3" stroke-width="2"/>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
           <button v-if="isInIframe" class="icon-btn" :class="{ active: isPinned }" @click="togglePin" title="固定窗口">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
               <path d="M16 4v8l3 3-2 2-3-3-4 4-2-2 4-4-3-3 2-2 3 3V4h2z" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -192,6 +208,9 @@ const recommendedAgentId = ref<string | null>(null)
 const currentPageUrl = ref('')
 const currentPageTitle = ref('')
 
+// 当前使用的模型
+const currentModel = ref('gpt-3.5-turbo')
+
 // 流式响应相关
 const streamingContent = ref('')
 const isStreaming = ref(false)
@@ -230,6 +249,9 @@ onMounted(async () => {
 
   // 加载 Agent 列表并进行意图识别
   await loadAgents()
+
+  // 加载当前模型设置
+  await loadCurrentModel()
 
   // 聚焦输入框
   nextTick(() => {
@@ -288,6 +310,25 @@ const loadAgents = async () => {
     console.error('加载 Agent 列表失败:', error)
   } finally {
     agentsLoading.value = false
+  }
+}
+
+// 加载当前模型设置
+const loadCurrentModel = async () => {
+  try {
+    const response = await chrome.runtime.sendMessage({
+      type: 'GET_SETTING',
+      payload: { key: 'model' }
+    })
+    if (response?.success && response.data) {
+      currentModel.value = response.data
+    } else {
+      // 默认模型
+      currentModel.value = 'gpt-3.5-turbo'
+    }
+  } catch (error) {
+    console.error('加载模型设置失败:', error)
+    currentModel.value = 'gpt-3.5-turbo'
   }
 }
 
@@ -461,6 +502,17 @@ const openFullscreen = () => {
     window.parent.postMessage({ type: 'CLOSE_CHAT' }, '*')
   }
 }
+
+const openHelp = () => {
+  // 打开帮助文档页面
+  chrome.tabs.create({ url: 'https://github.com/anthropics/claude-code/issues' })
+}
+
+const openSettings = () => {
+  // 打开设置页面
+  const url = chrome.runtime.getURL('options.html')
+  chrome.tabs.create({ url })
+}
 </script>
 
 <style scoped>
@@ -494,6 +546,31 @@ const openFullscreen = () => {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.header-title {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.header-title h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.model-badge {
+  font-size: 10px;
+  padding: 2px 6px;
+  background: rgba(255, 255, 255, 0.25);
+  border-radius: 4px;
+  font-weight: 400;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .logo-icon {
