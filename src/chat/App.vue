@@ -47,44 +47,51 @@
       </div>
 
       <div class="chat-messages" ref="messagesContainer">
-      <div v-if="messages.length === 0" class="empty-state">
-        <svg class="empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
-        <p>开始对话吧！</p>
+      <div v-if="streamMessages.length === 0" class="empty-state">
+        <p>开始对话吧</p>
       </div>
 
-      <div
-        v-for="message in messages"
-        :key="message.id"
-        class="message"
-        :class="message.role"
-      >
-        <div class="message-avatar">
-          <svg v-if="message.role === 'user'" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
-          </svg>
-          <svg v-else viewBox="0 0 24 24" fill="currentColor">
-            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-1-13h2v6h-2zm0 8h2v2h-2z"/>
-          </svg>
-        </div>
-        <div class="message-content-wrapper">
-          <div class="message-content">{{ message.content }}</div>
-          <div class="message-time">{{ formatTime(message.createdAt) }}</div>
-        </div>
+      <!-- 消息列表 -->
+      <div v-for="msg in streamMessages" :key="msg.id || msg.createdAt" :class="['message', msg.role]">
+        <!-- 用户消息 -->
+        <template v-if="msg.role === 'user'">
+          <div class="message-box user-box">{{ getMessageText(msg) }}</div>
+        </template>
+
+        <!-- AI 消息 -->
+        <template v-else>
+          <div class="assistant-content">
+            <template v-for="(block, index) in msg.blocks" :key="index">
+              <!-- 文本块 -->
+              <div v-if="block.type === 'text'" class="message-box assistant-box">
+                <span class="block-indicator text-indicator">▶</span>
+                <span class="block-content">{{ block.text }}</span>
+              </div>
+
+              <!-- 工具调用块 -->
+              <div v-else-if="block.type === 'tool_use'" class="tool-block">
+                <div class="tool-header">
+                  <span class="block-indicator tool-indicator">⚙</span>
+                  <span class="tool-name">{{ block.name }}</span>
+                  <span v-if="block.status === 'approved'" class="tool-badge approved">已批准</span>
+                  <span v-else-if="block.status === 'rejected'" class="tool-badge rejected">已拒绝</span>
+                </div>
+                <pre class="tool-params">{{ formatToolInput(block.input) }}</pre>
+                <div v-if="block.status === 'pending' && !isLoading" class="tool-actions">
+                  <button class="btn btn-approve" @click="handleToolResponse(block.id, true)">Approve</button>
+                  <button class="btn btn-reject" @click="handleToolResponse(block.id, false)">Reject</button>
+                </div>
+              </div>
+            </template>
+          </div>
+        </template>
       </div>
 
+      <!-- 加载指示器 -->
       <div v-if="isLoading" class="message assistant">
-        <div class="message-avatar">
-          <svg viewBox="0 0 24 24" fill="currentColor">
-            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-1-13h2v6h-2zm0 8h2v2h-2z"/>
-          </svg>
-        </div>
-        <div class="message-content-wrapper">
-          <div class="typing-indicator">
-            <span></span>
-            <span></span>
-            <span></span>
+        <div class="assistant-content">
+          <div class="message-box assistant-box typing">
+            <span></span><span></span><span></span>
           </div>
         </div>
       </div>
@@ -166,6 +173,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, nextTick, watch } from 'vue'
+import type { StreamMessage, ToolUseBlock, ContentBlock } from '../utils/types'
 
 interface Agent {
   id: string
@@ -176,27 +184,23 @@ interface Agent {
   matchScore?: number
 }
 
-interface Message {
-  id?: number
-  sessionId: number
-  role: 'user' | 'assistant'
-  content: string
-  createdAt: number
-}
-
-interface Session {
-  id: number
-  title: string
-  createdAt: number
-}
-
 const messagesContainer = ref<HTMLElement>()
 const inputArea = ref<HTMLTextAreaElement>()
 const inputMessage = ref('')
 const isLoading = ref(false)
-const messages = ref<Message[]>([])
+const streamMessages = ref<StreamMessage[]>([])
 const currentSessionId = ref(1)
 const isPinned = ref(false)
+
+// 计算是否在等待工具响应
+const waitingForToolResponse = computed(() => {
+  if (streamMessages.value.length === 0) return false
+  const lastMsg = streamMessages.value[streamMessages.value.length - 1]
+  if (lastMsg.role !== 'assistant') return false
+  return lastMsg.blocks.some(
+    (block) => block.type === 'tool_use' && (block as ToolUseBlock).status === 'pending'
+  )
+})
 
 // Agent 相关状态
 const agents = ref<Agent[]>([])
@@ -230,7 +234,49 @@ const filteredAgents = computed(() => {
   )
 })
 
+// TODO: 删除模拟数据 - 开始
+const loadMockData = () => {
+  streamMessages.value = [
+    // 第一轮：用户提问
+    {
+      id: 1,
+      sessionId: 1,
+      role: 'user',
+      blocks: [
+        { type: 'text', text: '帮我搜索一下当前页面的标题' }
+      ],
+      createdAt: Date.now()
+    },
+    // 第一轮：AI 回复（包含工具调用，状态为 pending，显示按钮）
+    {
+      id: 2,
+      sessionId: 1,
+      role: 'assistant',
+      blocks: [
+        { type: 'text', text: '好的，我需要调用工具来获取页面信息。' },
+        {
+          type: 'tool_use',
+          id: 'tool_001',
+          name: 'get_page_info',
+          input: {
+            action: 'get_title',
+            url: 'https://example.com'
+          },
+          status: 'pending'
+        }
+      ],
+      createdAt: Date.now(),
+      isComplete: false
+    }
+  ]
+}
+// TODO: 删除模拟数据 - 结束
+
 onMounted(async () => {
+  // TODO: 删除模拟数据调用 - 开始
+  loadMockData()
+  // TODO: 删除模拟数据调用 - 结束
+
   // 从URL参数获取sessionId
   const urlParams = new URLSearchParams(window.location.search)
   const sid = urlParams.get('sessionId')
@@ -244,8 +290,10 @@ onMounted(async () => {
   if (pageUrl) currentPageUrl.value = decodeURIComponent(pageUrl)
   if (pageTitle) currentPageTitle.value = decodeURIComponent(pageTitle)
 
+  // TODO: 恢复加载历史消息 - 开始（当前被注释）
   // 加载历史消息
-  await loadMessages()
+  // await loadMessages()
+  // TODO: 恢复加载历史消息 - 结束
 
   // 加载 Agent 列表并进行意图识别
   await loadAgents()
@@ -352,24 +400,37 @@ const loadMessages = async () => {
     payload: { sessionId: currentSessionId.value }
   })
   if (response.success) {
-    messages.value = response.data
+    streamMessages.value = response.data.map((msg: any) => ({
+      ...msg,
+      blocks: msg.blocks || [{ type: 'text', text: msg.content }]
+    }))
     nextTick(scrollToBottom)
   }
 }
 
+const getMessageText = (msg: StreamMessage): string => {
+  const textBlocks = msg.blocks.filter((b) => b.type === 'text')
+  return textBlocks.map((b) => (b as any).text).join('')
+}
+
+const formatToolInput = (input: Record<string, any>): string => {
+  return JSON.stringify(input, null, 2)
+}
+
 const sendMessage = async () => {
-  if (!inputMessage.value.trim() || isLoading.value || isStreaming.value) return
+  if (!inputMessage.value.trim() || isLoading.value || isStreaming.value || waitingForToolResponse.value) return
 
   const content = inputMessage.value.trim()
   inputMessage.value = ''
 
   // 添加用户消息
-  messages.value.push({
+  const userMessage: StreamMessage = {
     sessionId: currentSessionId.value,
     role: 'user',
-    content,
+    blocks: [{ type: 'text', text: content }],
     createdAt: Date.now()
-  })
+  }
+  streamMessages.value.push(userMessage)
 
   nextTick(scrollToBottom)
 
@@ -388,14 +449,14 @@ const sendStreamMessage = async (content: string) => {
   streamingContent.value = ''
 
   // 添加一个空的 assistant 消息用于显示流式内容
-  const assistantMessage: Message = {
+  const assistantMessage: StreamMessage = {
     sessionId: currentSessionId.value,
     role: 'assistant',
-    content: '',
+    blocks: [{ type: 'text', text: '' }],
     createdAt: Date.now()
   }
-  messages.value.push(assistantMessage)
-  const messageIndex = messages.value.length - 1
+  streamMessages.value.push(assistantMessage)
+  const messageIndex = streamMessages.value.length - 1
 
   try {
     const port = chrome.runtime.connect({ name: 'chat-stream' })
@@ -404,14 +465,20 @@ const sendStreamMessage = async (content: string) => {
       if (msg.type === 'content') {
         streamingContent.value += msg.content
         // 更新消息内容
-        messages.value[messageIndex].content = streamingContent.value
+        const textBlock = streamMessages.value[messageIndex].blocks.find(b => b.type === 'text')
+        if (textBlock && textBlock.type === 'text') {
+          textBlock.text = streamingContent.value
+        }
         nextTick(scrollToBottom)
       } else if (msg.type === 'done') {
         isStreaming.value = false
         port.disconnect()
       } else if (msg.type === 'error') {
         console.error('流式响应错误:', msg.error)
-        messages.value[messageIndex].content = `错误: ${msg.error}`
+        const textBlock = streamMessages.value[messageIndex].blocks.find(b => b.type === 'text')
+        if (textBlock && textBlock.type === 'text') {
+          textBlock.text = `错误: ${msg.error}`
+        }
         isStreaming.value = false
         port.disconnect()
       }
@@ -428,7 +495,10 @@ const sendStreamMessage = async (content: string) => {
     })
   } catch (error) {
     console.error('发送流式消息失败:', error)
-    messages.value[messageIndex].content = `发送失败: ${error}`
+    const textBlock = streamMessages.value[messageIndex].blocks.find(b => b.type === 'text')
+    if (textBlock && textBlock.type === 'text') {
+      textBlock.text = `发送失败: ${error}`
+    }
     isStreaming.value = false
   }
 }
@@ -443,16 +513,78 @@ const sendNonStreamMessage = async (content: string) => {
     })
 
     if (response.success) {
-      messages.value.push({
+      const assistantMessage: StreamMessage = {
         sessionId: currentSessionId.value,
         role: 'assistant',
-        content: response.response,
-        createdAt: Date.now()
-      })
+        blocks: response.blocks || [{ type: 'text', text: response.response }],
+        createdAt: Date.now(),
+        isComplete: response.isComplete !== false
+      }
+      streamMessages.value.push(assistantMessage)
       nextTick(scrollToBottom)
     }
   } catch (error) {
     console.error('发送消息失败:', error)
+  } finally {
+    isLoading.value = false
+  }
+}
+
+// 处理工具响应
+const handleToolResponse = async (toolId: string, approved: boolean) => {
+  const lastMsg = streamMessages.value[streamMessages.value.length - 1]
+  if (lastMsg && lastMsg.role === 'assistant') {
+    const toolBlock = lastMsg.blocks.find(
+      (b) => b.type === 'tool_use' && (b as ToolUseBlock).id === toolId
+    ) as ToolUseBlock | undefined
+
+    if (toolBlock) {
+      toolBlock.status = approved ? 'approved' : 'rejected'
+    }
+  }
+
+  // TODO: 删除模拟工具响应 - 开始
+  isLoading.value = true
+  await new Promise(resolve => setTimeout(resolve, 500)) // 模拟延迟
+  const mockResponse: StreamMessage = {
+    id: 3,
+    sessionId: currentSessionId.value,
+    role: 'assistant',
+    blocks: [
+      { type: 'text', text: approved ? '页面标题是：Example Domain。任务已完成！' : '好的，已取消获取页面信息的操作。' }
+    ],
+    createdAt: Date.now(),
+    isComplete: true
+  }
+  streamMessages.value.push(mockResponse)
+  nextTick(scrollToBottom)
+  isLoading.value = false
+  return
+  // TODO: 删除模拟工具响应 - 结束
+
+  isLoading.value = true
+  try {
+    const response = await chrome.runtime.sendMessage({
+      type: 'TOOL_RESPONSE',
+      payload: {
+        sessionId: currentSessionId.value,
+        toolResponse: { toolId, approved }
+      }
+    })
+
+    if (response.success && response.blocks) {
+      const assistantMessage: StreamMessage = {
+        sessionId: currentSessionId.value,
+        role: 'assistant',
+        blocks: response.blocks,
+        createdAt: Date.now(),
+        isComplete: response.isComplete
+      }
+      streamMessages.value.push(assistantMessage)
+      nextTick(scrollToBottom)
+    }
+  } catch (error) {
+    console.error('处理工具响应失败:', error)
   } finally {
     isLoading.value = false
   }
@@ -635,124 +767,192 @@ const openSettings = () => {
   padding: 16px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  background: white;
+  gap: 12px;
+  background: #fafafa;
 }
 
 .empty-state {
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
   height: 100%;
-  color: #9ca3af;
-}
-
-.empty-icon {
-  width: 48px;
-  height: 48px;
-  margin-bottom: 12px;
-  stroke: #d1d5db;
+  color: #999;
+  font-size: 14px;
 }
 
 .empty-state p {
   margin: 0;
-  font-size: 14px;
 }
 
 .message {
   display: flex;
-  gap: 12px;
-  animation: slideIn 0.3s ease;
-}
-
-@keyframes slideIn {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.message-avatar {
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
-.message.user .message-avatar {
-  background: #667eea;
-  color: white;
-}
-
-.message.assistant .message-avatar {
-  background: #f3f4f6;
-  color: #6b7280;
-}
-
-.message-avatar svg {
-  width: 18px;
-  height: 18px;
-}
-
-.message-content-wrapper {
-  flex: 1;
-  display: flex;
   flex-direction: column;
-  gap: 4px;
 }
 
-.message-content {
-  background: #f3f4f6;
+.message.user {
+  align-items: flex-end;
+}
+
+.message.assistant {
+  align-items: flex-start;
+}
+
+.message-box {
+  max-width: 85%;
   padding: 10px 14px;
-  border-radius: 12px;
   font-size: 14px;
   line-height: 1.5;
-  color: #1f2937;
   word-wrap: break-word;
 }
 
-.message.user .message-content {
-  background: #667eea;
-  color: white;
+.user-box {
+  background: #1a73e8;
+  color: #fff;
+  border-radius: 4px;
 }
 
-.message-time {
+.assistant-box {
+  background: #fff;
+  color: #333;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.assistant-content {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 85%;
+}
+
+.block-indicator {
+  flex-shrink: 0;
+  font-size: 12px;
+}
+
+.text-indicator {
+  color: #1a73e8;
+}
+
+.tool-indicator {
+  color: #f59e0b;
+}
+
+.block-content {
+  flex: 1;
+}
+
+/* 工具块样式 */
+.tool-block {
+  background: #fffbeb;
+  border: 1px solid #fcd34d;
+  border-radius: 4px;
+  padding: 12px;
+  font-size: 13px;
+}
+
+.tool-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.tool-name {
+  font-weight: 600;
+  color: #b45309;
+}
+
+.tool-badge {
+  margin-left: auto;
+  padding: 2px 8px;
+  border-radius: 4px;
   font-size: 11px;
-  color: #9ca3af;
-  padding: 0 4px;
+  font-weight: 500;
 }
 
-.typing-indicator {
+.tool-badge.approved {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.tool-badge.rejected {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.tool-params {
+  background: #fef3c7;
+  border-radius: 4px;
+  padding: 8px 10px;
+  margin: 0;
+  font-size: 12px;
+  font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
+  color: #78350f;
+  white-space: pre-wrap;
+  word-break: break-all;
+  overflow-x: auto;
+}
+
+.tool-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+  justify-content: flex-end;
+}
+
+.btn {
+  padding: 6px 16px;
+  border: none;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.btn-approve {
+  background: #10b981;
+  color: #fff;
+}
+
+.btn-approve:hover {
+  background: #059669;
+}
+
+.btn-reject {
+  background: #ef4444;
+  color: #fff;
+}
+
+.btn-reject:hover {
+  background: #dc2626;
+}
+
+/* 打字动画 */
+.message-box.typing {
   display: flex;
   gap: 4px;
-  padding: 10px 14px;
-  background: #f3f4f6;
-  border-radius: 12px;
-  width: fit-content;
+  padding: 12px 16px;
 }
 
-.typing-indicator span {
+.message-box.typing span {
   width: 6px;
   height: 6px;
   border-radius: 50%;
   background: #9ca3af;
-  animation: typing 1.4s infinite;
+  animation: typing 1.2s infinite;
 }
 
-.typing-indicator span:nth-child(2) {
-  animation-delay: 0.2s;
+.message-box.typing span:nth-child(2) {
+  animation-delay: 0.15s;
 }
 
-.typing-indicator span:nth-child(3) {
-  animation-delay: 0.4s;
+.message-box.typing span:nth-child(3) {
+  animation-delay: 0.3s;
 }
 
 @keyframes typing {
@@ -760,7 +960,7 @@ const openSettings = () => {
     transform: translateY(0);
   }
   30% {
-    transform: translateY(-10px);
+    transform: translateY(-6px);
   }
 }
 
