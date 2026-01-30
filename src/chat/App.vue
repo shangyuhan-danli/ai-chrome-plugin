@@ -70,6 +70,15 @@
         <!-- AI 消息 -->
         <template v-else>
           <div class="assistant-content">
+            <!-- 思考过程 -->
+            <div v-if="msg.think" class="think-block">
+              <div class="think-header">
+                <span class="think-icon">💭</span>
+                <span class="think-label">思考过程</span>
+              </div>
+              <div class="think-content">{{ msg.think }}</div>
+            </div>
+
             <template v-for="(block, index) in msg.blocks" :key="index">
               <!-- 文本块 -->
               <div v-if="block.type === 'text'" class="message-box assistant-box">
@@ -184,6 +193,11 @@
 import { ref, computed, onMounted, nextTick, watch } from 'vue'
 import type { StreamMessage, ToolUseBlock, ContentBlock } from '../utils/types'
 
+// 扩展 StreamMessage 类型以支持 think
+interface ExtendedStreamMessage extends StreamMessage {
+  think?: string
+}
+
 interface Agent {
   id: string
   name: string
@@ -197,7 +211,7 @@ const messagesContainer = ref<HTMLElement>()
 const inputArea = ref<HTMLTextAreaElement>()
 const inputMessage = ref('')
 const isLoading = ref(false)
-const streamMessages = ref<StreamMessage[]>([])
+const streamMessages = ref<ExtendedStreamMessage[]>([])
 const currentSessionId = ref(1)
 const isPinned = ref(false)
 
@@ -414,7 +428,7 @@ const sendStreamMessage = async (content: string) => {
   streamingContent.value = ''
 
   // 添加一个空的 assistant 消息用于显示流式内容
-  const assistantMessage: StreamMessage = {
+  const assistantMessage: ExtendedStreamMessage = {
     sessionId: currentSessionId.value,
     role: 'assistant',
     blocks: [{ type: 'text', text: '' }],
@@ -423,6 +437,9 @@ const sendStreamMessage = async (content: string) => {
   streamMessages.value.push(assistantMessage)
   const messageIndex = streamMessages.value.length - 1
 
+  let lastThink = ''
+  let lastToolCall: ToolUseBlock | null = null
+
   try {
     const port = chrome.runtime.connect({ name: 'chat-stream' })
 
@@ -430,7 +447,7 @@ const sendStreamMessage = async (content: string) => {
       if (msg.type === 'data') {
         const data = msg.data
 
-        // 处理文本内容
+        // 处理文本内容 - 流式过程中不断拼接显示
         if (data.content) {
           streamingContent.value += data.content
           // 更新消息内容
@@ -441,23 +458,24 @@ const sendStreamMessage = async (content: string) => {
           nextTick(scrollToBottom)
         }
 
-        // 处理工具调用 - 只有当 partial 为 false 时才添加
-        if (data.toolCall && !data.toolCall.partial) {
-          const toolBlock: ToolUseBlock = {
-            type: 'tool_use',
-            id: `tool_${Date.now()}`,
-            name: data.toolCall.tool_name,
-            input: JSON.parse(data.toolCall.arguments || '{}'),
-            status: 'pending'
-          }
-          streamMessages.value[messageIndex].blocks.push(toolBlock)
-          streamMessages.value[messageIndex].isComplete = false
-          nextTick(scrollToBottom)
+        // 收集思考内容 - 替换策略，取最后一次
+        if (data.think && data.think.reasoning_content) {
+          lastThink = data.think.reasoning_content
         }
 
-        // 处理思考内容（可选显示）
-        if (data.think && !data.think.partial) {
-          console.log('思考过程:', data.think.reasoning_content)
+        // 收集工具调用 - 替换策略，取最后一次
+        if (data.toolCall && data.toolCall.tool_name) {
+          try {
+            lastToolCall = {
+              type: 'tool_use',
+              id: `tool_${Date.now()}`,
+              name: data.toolCall.tool_name,
+              input: JSON.parse(data.toolCall.arguments || '{}'),
+              status: 'pending'
+            }
+          } catch (e) {
+            console.error('解析工具参数失败:', e)
+          }
         }
 
         // 处理统计信息
@@ -465,13 +483,31 @@ const sendStreamMessage = async (content: string) => {
           console.log('Token 使用统计:', data.statistic.token_usage)
         }
       } else if (msg.type === 'done') {
+        // 流式传输完成 - 用 think 和 tool_call 替换原始 content 显示
         isStreaming.value = false
-        // 如果没有 tool_call，标记为完成
-        const hasToolCall = streamMessages.value[messageIndex].blocks.some(b => b.type === 'tool_use')
-        if (!hasToolCall) {
+
+        // 清空 blocks，重新构建
+        streamMessages.value[messageIndex].blocks = []
+
+        // 如果有思考内容，添加 think
+        if (lastThink) {
+          streamMessages.value[messageIndex].think = lastThink
+        }
+
+        // 如果有工具调用，添加 tool_call 块
+        if (lastToolCall) {
+          streamMessages.value[messageIndex].blocks.push(lastToolCall)
+          streamMessages.value[messageIndex].isComplete = false
+        } else {
+          // 没有工具调用，保留文本内容（如果没有 think 和 tool_call，说明是普通回复）
+          if (!lastThink && streamingContent.value) {
+            streamMessages.value[messageIndex].blocks.push({ type: 'text', text: streamingContent.value })
+          }
           streamMessages.value[messageIndex].isComplete = true
         }
+
         port.disconnect()
+        nextTick(scrollToBottom)
       } else if (msg.type === 'error') {
         console.error('流式响应错误:', msg.error)
         const textBlock = streamMessages.value[messageIndex].blocks.find(b => b.type === 'text')
@@ -541,35 +577,117 @@ const handleToolResponse = async (toolId: string, approved: boolean) => {
     }
   }
 
-  // 使用 role: function 调用真实 API
-  isLoading.value = true
+  // 使用流式接口发送工具响应
+  isStreaming.value = true
+  streamingContent.value = ''
+
+  // 添加一个空的 assistant 消息用于显示流式内容
+  const assistantMessage: ExtendedStreamMessage = {
+    sessionId: currentSessionId.value,
+    role: 'assistant',
+    blocks: [{ type: 'text', text: '' }],
+    createdAt: Date.now()
+  }
+  streamMessages.value.push(assistantMessage)
+  const messageIndex = streamMessages.value.length - 1
+
+  let currentThink = ''
+  let pendingToolCall: ToolUseBlock | null = null
+
   try {
-    const response = await chrome.runtime.sendMessage({
-      type: 'TOOL_RESPONSE',
-      payload: {
-        sessionId: currentSessionId.value,
-        toolResponse: { toolId, approved },
-        agentId: selectedAgent.value?.id,
-        model: currentModel.value,
-        userId: 'default_user'
+    const port = chrome.runtime.connect({ name: 'chat-stream' })
+
+    port.onMessage.addListener((msg) => {
+      if (msg.type === 'data') {
+        const data = msg.data
+
+        // 处理文本内容 - 流式过程中不断拼接显示
+        if (data.content) {
+          streamingContent.value += data.content
+          const textBlock = streamMessages.value[messageIndex].blocks.find(b => b.type === 'text')
+          if (textBlock && textBlock.type === 'text') {
+            textBlock.text = streamingContent.value
+          }
+          nextTick(scrollToBottom)
+        }
+
+        // 收集思考内容
+        if (data.think && data.think.reasoning_content) {
+          currentThink += data.think.reasoning_content
+        }
+
+        // 收集工具调用
+        if (data.toolCall && data.toolCall.tool_name) {
+          try {
+            pendingToolCall = {
+              type: 'tool_use',
+              id: `tool_${Date.now()}`,
+              name: data.toolCall.tool_name,
+              input: JSON.parse(data.toolCall.arguments || '{}'),
+              status: 'pending'
+            }
+          } catch (e) {
+            console.error('解析工具参数失败:', e)
+          }
+        }
+
+        // 处理统计信息
+        if (data.statistic) {
+          console.log('Token 使用统计:', data.statistic.token_usage)
+        }
+      } else if (msg.type === 'done') {
+        // 流式传输完成 - 用 think 和 tool_call 替换原始 content 显示
+        isStreaming.value = false
+
+        // 清空 blocks，重新构建
+        streamMessages.value[messageIndex].blocks = []
+
+        // 如果有思考内容，添加 think
+        if (currentThink) {
+          streamMessages.value[messageIndex].think = currentThink
+        }
+
+        // 如果有工具调用，添加 tool_call 块
+        if (pendingToolCall) {
+          streamMessages.value[messageIndex].blocks.push(pendingToolCall)
+          streamMessages.value[messageIndex].isComplete = false
+        } else {
+          // 没有工具调用，保留文本内容
+          if (!currentThink && streamingContent.value) {
+            streamMessages.value[messageIndex].blocks.push({ type: 'text', text: streamingContent.value })
+          }
+          streamMessages.value[messageIndex].isComplete = true
+        }
+
+        port.disconnect()
+        nextTick(scrollToBottom)
+      } else if (msg.type === 'error') {
+        console.error('流式响应错误:', msg.error)
+        const textBlock = streamMessages.value[messageIndex].blocks.find(b => b.type === 'text')
+        if (textBlock && textBlock.type === 'text') {
+          textBlock.text = `错误: ${msg.error}`
+        }
+        isStreaming.value = false
+        port.disconnect()
       }
     })
 
-    if (response.success && response.blocks) {
-      const assistantMessage: StreamMessage = {
-        sessionId: currentSessionId.value,
-        role: 'assistant',
-        blocks: response.blocks,
-        createdAt: Date.now(),
-        isComplete: response.isComplete
-      }
-      streamMessages.value.push(assistantMessage)
-      nextTick(scrollToBottom)
-    }
+    // 发送工具响应
+    port.postMessage({
+      agentId: selectedAgent.value?.id || '',
+      sessionId: currentSessionId.value,
+      message: JSON.stringify({ toolId, approved }),
+      model: currentModel.value,
+      userId: 'default_user',
+      role: 'function'
+    })
   } catch (error) {
     console.error('处理工具响应失败:', error)
-  } finally {
-    isLoading.value = false
+    const textBlock = streamMessages.value[messageIndex].blocks.find(b => b.type === 'text')
+    if (textBlock && textBlock.type === 'text') {
+      textBlock.text = `发送失败: ${error}`
+    }
+    isStreaming.value = false
   }
 }
 
@@ -843,6 +961,39 @@ const createNewSession = async () => {
   flex-direction: column;
   gap: 8px;
   max-width: 85%;
+}
+
+/* 思考块样式 */
+.think-block {
+  background: #f0f7ff;
+  border: 1px solid #91caff;
+  border-radius: 4px;
+  padding: 10px;
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+
+.think-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.think-icon {
+  font-size: 14px;
+}
+
+.think-label {
+  font-weight: 500;
+  color: #1677ff;
+}
+
+.think-content {
+  color: #4b5563;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .block-indicator {

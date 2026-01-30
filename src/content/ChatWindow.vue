@@ -297,15 +297,15 @@ const processStreamChat = async (content: string, role: 'user' | 'function', too
     const msgIndex = streamMessages.value.length - 1
 
     let currentContent = ''
-    let currentThink = ''
-    let pendingToolCall: ToolUseBlock | null = null
+    let lastThink = ''
+    let lastToolCall: ToolUseBlock | null = null
 
     // 监听流式响应
     port.onMessage.addListener((msg) => {
       if (msg.type === 'data') {
         const data = msg.data
 
-        // 处理文本内容
+        // 处理文本内容 - 流式过程中不断拼接显示
         if (data.content) {
           currentContent += data.content
           // 更新或创建文本块
@@ -318,27 +318,21 @@ const processStreamChat = async (content: string, role: 'user' | 'function', too
           nextTick(scrollToBottom)
         }
 
-        // 处理思考内容
-        if (data.think) {
-          if (!data.think.partial) {
-            currentThink = data.think.reasoning_content
-            streamMessages.value[msgIndex].think = currentThink
-          }
+        // 收集思考内容 - 替换策略，取最后一次
+        if (data.think && data.think.reasoning_content) {
+          lastThink = data.think.reasoning_content
         }
 
-        // 处理工具调用
-        if (data.toolCall && !data.toolCall.partial) {
+        // 收集工具调用 - 替换策略，取最后一次
+        if (data.toolCall && data.toolCall.tool_name) {
           try {
-            pendingToolCall = {
+            lastToolCall = {
               type: 'tool_use',
               id: `tool_${Date.now()}`,
               name: data.toolCall.tool_name,
               input: JSON.parse(data.toolCall.arguments || '{}'),
               status: 'pending'
             }
-            streamMessages.value[msgIndex].blocks.push(pendingToolCall)
-            streamMessages.value[msgIndex].isComplete = false
-            nextTick(scrollToBottom)
           } catch (e) {
             console.error('解析工具参数失败:', e)
           }
@@ -349,12 +343,31 @@ const processStreamChat = async (content: string, role: 'user' | 'function', too
           console.log('Token 使用统计:', data.statistic.token_usage)
         }
       } else if (msg.type === 'done') {
-        // 流式传输完成
-        if (!pendingToolCall) {
+        // 流式传输完成 - 用 think 和 tool_call 替换原始 content 显示
+
+        // 清空 blocks，重新构建
+        streamMessages.value[msgIndex].blocks = []
+
+        // 如果有思考内容，添加 think
+        if (lastThink) {
+          streamMessages.value[msgIndex].think = lastThink
+        }
+
+        // 如果有工具调用，添加 tool_call 块
+        if (lastToolCall) {
+          streamMessages.value[msgIndex].blocks.push(lastToolCall)
+          streamMessages.value[msgIndex].isComplete = false
+        } else {
+          // 没有工具调用，保留文本内容（如果没有 think 和 tool_call，说明是普通回复）
+          if (!lastThink && currentContent) {
+            streamMessages.value[msgIndex].blocks.push({ type: 'text', text: currentContent })
+          }
           streamMessages.value[msgIndex].isComplete = true
         }
+
         isLoading.value = false
         port.disconnect()
+        nextTick(scrollToBottom)
       } else if (msg.type === 'error') {
         console.error('流式响应错误:', msg.error)
         // 显示错误信息

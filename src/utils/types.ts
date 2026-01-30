@@ -21,12 +21,10 @@ export interface StreamChatRequest {
 // 流式API响应 - 思考内容
 export interface ThinkContent {
   reasoning_content: string
-  partial: boolean
 }
 
 // 流式API响应 - 工具调用
 export interface ToolCallContent {
-  partial: boolean
   tool_name: string
   arguments: string
 }
@@ -51,6 +49,7 @@ export interface StreamResponse {
   statistic?: Statistic
   // 结束消息
   message?: string
+  session_id?: string
 }
 
 // 流式输出内容块类型
