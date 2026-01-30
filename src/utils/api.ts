@@ -42,7 +42,7 @@ export interface ApiConfig {
 
 // 默认配置 - 开发环境
 const DEFAULT_CONFIG: ApiConfig = {
-  baseUrl: 'http://localhost:3000'
+  baseUrl: 'http://localhost:8000'
 }
 
 export class ApiService {
@@ -116,7 +116,7 @@ export class ApiService {
     onError: (error: Error) => void
   ): Promise<void> {
     try {
-      const response = await fetch(`${this.config.baseUrl}/api/chat/stream`, {
+      const response = await fetch(`${this.config.baseUrl}/api/v1/agent/chat`, {
         method: 'POST',
         headers: this.getHeaders(),
         body: JSON.stringify(request),
