@@ -108,13 +108,13 @@ async function handleMessage(message: ChromeMessage, sender: chrome.runtime.Mess
         // 保存用户消息
         await chatDB.addMessage(sessionId, 'user', content)
 
-        // 如果有 agentId，使用真实 API；否则使用模拟响应
+        // 如果有 agentId，使用真实 API
         let aiResponse: string
         if (agentId) {
           // 使用同步方式获取完整响应
           aiResponse = await getFullResponse(agentId, sessionId, content, payload.model, payload.userId)
         } else {
-          aiResponse = await simulateAIResponse(content)
+          aiResponse = '请先选择一个 Agent 后再发送消息'
         }
 
         await chatDB.addMessage(sessionId, 'assistant', aiResponse)
@@ -279,71 +279,6 @@ async function getFullResponse(
       (error) => reject(error)
     )
   })
-}
-
-// 模拟AI响应（实际项目中应该调用真实的AI API）
-async function simulateAIResponse(userMessage: string): Promise<string> {
-  // 模拟网络延迟
-  await new Promise(resolve => setTimeout(resolve, 1000))
-
-  const responses = [
-    `我理解你说的"${userMessage}"。这是一个很好的问题！`,
-    `关于"${userMessage}"，让我来帮你分析一下...`,
-    `收到你的消息："${userMessage}"。我会尽力帮助你。`,
-    `针对"${userMessage}"这个问题，我的建议是...`
-  ]
-
-  return responses[Math.floor(Math.random() * responses.length)]
-}
-
-// 处理工具响应（模拟）
-// 实际项目中应该调用后台 API 继续对话
-async function processToolResponse(
-  sessionId: number,
-  toolId: string,
-  approved: boolean
-): Promise<{ blocks: ContentBlock[]; isComplete: boolean }> {
-  // 模拟网络延迟
-  await new Promise(resolve => setTimeout(resolve, 800))
-
-  if (!approved) {
-    // 用户拒绝了工具调用
-    return {
-      blocks: [
-        { type: 'text', text: '好的，我不会执行这个操作。请问还有什么我可以帮助您的吗？' }
-      ],
-      isComplete: true
-    }
-  }
-
-  // 模拟工具执行后的响应
-  // 随机决定是否继续调用工具或完成
-  const shouldContinue = Math.random() > 0.5
-
-  if (shouldContinue) {
-    // 继续调用另一个工具
-    return {
-      blocks: [
-        { type: 'text', text: '工具执行成功。现在我需要执行下一步操作...' },
-        {
-          type: 'tool_use',
-          id: `tool_${Date.now()}`,
-          name: 'read_file',
-          input: { path: '/example/config.json' },
-          status: 'pending'
-        } as ToolUseBlock
-      ],
-      isComplete: false
-    }
-  } else {
-    // 完成任务 (attempt_completion)
-    return {
-      blocks: [
-        { type: 'text', text: '任务已完成！我已经成功执行了您请求的操作。' }
-      ],
-      isComplete: true
-    }
-  }
 }
 
 // 插件安装时创建默认会话

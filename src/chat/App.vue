@@ -234,49 +234,7 @@ const filteredAgents = computed(() => {
   )
 })
 
-// TODO: 删除模拟数据 - 开始
-const loadMockData = () => {
-  streamMessages.value = [
-    // 第一轮：用户提问
-    {
-      id: 1,
-      sessionId: 1,
-      role: 'user',
-      blocks: [
-        { type: 'text', text: '帮我搜索一下当前页面的标题' }
-      ],
-      createdAt: Date.now()
-    },
-    // 第一轮：AI 回复（包含工具调用，状态为 pending，显示按钮）
-    {
-      id: 2,
-      sessionId: 1,
-      role: 'assistant',
-      blocks: [
-        { type: 'text', text: '好的，我需要调用工具来获取页面信息。' },
-        {
-          type: 'tool_use',
-          id: 'tool_001',
-          name: 'get_page_info',
-          input: {
-            action: 'get_title',
-            url: 'https://example.com'
-          },
-          status: 'pending'
-        }
-      ],
-      createdAt: Date.now(),
-      isComplete: false
-    }
-  ]
-}
-// TODO: 删除模拟数据 - 结束
-
 onMounted(async () => {
-  // TODO: 删除模拟数据调用 - 开始
-  loadMockData()
-  // TODO: 删除模拟数据调用 - 结束
-
   // 从URL参数获取sessionId
   const urlParams = new URLSearchParams(window.location.search)
   const sid = urlParams.get('sessionId')
@@ -290,10 +248,8 @@ onMounted(async () => {
   if (pageUrl) currentPageUrl.value = decodeURIComponent(pageUrl)
   if (pageTitle) currentPageTitle.value = decodeURIComponent(pageTitle)
 
-  // TODO: 恢复加载历史消息 - 开始（当前被注释）
   // 加载历史消息
-  // await loadMessages()
-  // TODO: 恢复加载历史消息 - 结束
+  await loadMessages()
 
   // 加载 Agent 列表并进行意图识别
   await loadAgents()
@@ -543,32 +499,17 @@ const handleToolResponse = async (toolId: string, approved: boolean) => {
     }
   }
 
-  // TODO: 删除模拟工具响应 - 开始
-  isLoading.value = true
-  await new Promise(resolve => setTimeout(resolve, 500)) // 模拟延迟
-  const mockResponse: StreamMessage = {
-    id: 3,
-    sessionId: currentSessionId.value,
-    role: 'assistant',
-    blocks: [
-      { type: 'text', text: approved ? '页面标题是：Example Domain。任务已完成！' : '好的，已取消获取页面信息的操作。' }
-    ],
-    createdAt: Date.now(),
-    isComplete: true
-  }
-  streamMessages.value.push(mockResponse)
-  nextTick(scrollToBottom)
-  isLoading.value = false
-  return
-  // TODO: 删除模拟工具响应 - 结束
-
+  // 使用 role: function 调用真实 API
   isLoading.value = true
   try {
     const response = await chrome.runtime.sendMessage({
       type: 'TOOL_RESPONSE',
       payload: {
         sessionId: currentSessionId.value,
-        toolResponse: { toolId, approved }
+        toolResponse: { toolId, approved },
+        agentId: selectedAgent.value?.id,
+        model: currentModel.value,
+        userId: 'default_user'
       }
     })
 
