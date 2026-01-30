@@ -1,4 +1,5 @@
 // API 服务层 - 对接后台服务
+import type { StreamResponse, ThinkContent, ToolCallContent, Statistic } from './types'
 
 export interface Agent {
   id: string
@@ -10,14 +11,20 @@ export interface Agent {
 }
 
 export interface ChatStreamRequest {
-  agentId: string
-  sessionId: string
   message: string
-  context?: {
-    url: string
-    title: string
-    selection?: string
-  }
+  role: 'user' | 'function'
+  model: string
+  agent_id: string
+  session_id: string
+  user_id: string
+}
+
+// 流式响应回调数据
+export interface StreamCallbackData {
+  content?: string
+  think?: ThinkContent
+  toolCall?: ToolCallContent
+  statistic?: Statistic
 }
 
 export interface HistoryMessage {
@@ -98,14 +105,14 @@ export class ApiService {
   /**
    * 流式会话
    * @param request 请求参数
-   * @param onMessage 收到消息片段时的回调
+   * @param onData 收到数据时的回调
    * @param onDone 完成时的回调
    * @param onError 错误时的回调
    */
   async chatStream(
     request: ChatStreamRequest,
-    onMessage: (content: string) => void,
-    onDone: (messageId: string) => void,
+    onData: (data: StreamCallbackData) => void,
+    onDone: () => void,
     onError: (error: Error) => void
   ): Promise<void> {
     try {
@@ -139,37 +146,69 @@ export class ApiService {
         buffer = lines.pop() || ''
 
         for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            try {
-              const data = JSON.parse(line.slice(6))
-              if (data.type === 'content') {
-                onMessage(data.content)
-              } else if (data.type === 'done') {
-                onDone(data.messageId || '')
-              } else if (data.type === 'error') {
-                onError(new Error(data.message || '服务端错误'))
-              }
-            } catch (e) {
-              // JSON 解析失败，忽略这一行
-              console.warn('解析 SSE 数据失败:', line)
+          const trimmedLine = line.trim()
+          if (!trimmedLine) continue
+
+          try {
+            const data: StreamResponse = JSON.parse(trimmedLine)
+
+            // 检查是否是结束消息
+            if (data.message === '对话完成') {
+              onDone()
+              return
             }
+
+            // 构建回调数据
+            const callbackData: StreamCallbackData = {}
+
+            if (data.content) {
+              callbackData.content = data.content
+            }
+            if (data.think) {
+              callbackData.think = data.think
+            }
+            if (data.tool_call) {
+              callbackData.toolCall = data.tool_call
+            }
+            if (data.statistic) {
+              callbackData.statistic = data.statistic
+            }
+
+            // 只有有数据时才回调
+            if (Object.keys(callbackData).length > 0) {
+              onData(callbackData)
+            }
+          } catch (e) {
+            // JSON 解析失败，跳过非标准JSON
+            console.warn('解析流式数据失败，跳过:', trimmedLine)
           }
         }
       }
 
       // 处理缓冲区中剩余的数据
-      if (buffer.startsWith('data: ')) {
+      if (buffer.trim()) {
         try {
-          const data = JSON.parse(buffer.slice(6))
-          if (data.type === 'content') {
-            onMessage(data.content)
-          } else if (data.type === 'done') {
-            onDone(data.messageId || '')
+          const data: StreamResponse = JSON.parse(buffer.trim())
+          if (data.message === '对话完成') {
+            onDone()
+            return
+          }
+
+          const callbackData: StreamCallbackData = {}
+          if (data.content) callbackData.content = data.content
+          if (data.think) callbackData.think = data.think
+          if (data.tool_call) callbackData.toolCall = data.tool_call
+          if (data.statistic) callbackData.statistic = data.statistic
+
+          if (Object.keys(callbackData).length > 0) {
+            onData(callbackData)
           }
         } catch (e) {
           // 忽略
         }
       }
+
+      onDone()
     } catch (error) {
       onError(error instanceof Error ? error : new Error(String(error)))
     }
