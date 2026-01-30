@@ -10,10 +10,19 @@
           </div>
           <div class="header-title">
             <h3>AI Chat Assistant</h3>
-            <span v-if="currentModel" class="model-badge">{{ currentModel }}</span>
+            <div class="header-badges">
+              <span v-if="selectedAgent" class="agent-badge" :title="selectedAgent.name">{{ selectedAgent.name }}</span>
+              <span v-if="currentModel" class="model-badge">{{ currentModel }}</span>
+            </div>
           </div>
         </div>
         <div class="header-right">
+          <button class="icon-btn" @click="createNewSession" title="新建会话">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+              <line x1="12" y1="5" x2="12" y2="19" stroke-width="2" stroke-linecap="round"/>
+              <line x1="5" y1="12" x2="19" y2="12" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+          </button>
           <button class="icon-btn" @click="openHelp" title="帮助文档">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
               <circle cx="12" cy="12" r="10" stroke-width="2"/>
@@ -619,6 +628,22 @@ const openSettings = () => {
   const url = chrome.runtime.getURL('options.html')
   chrome.tabs.create({ url })
 }
+
+// 新建会话
+const createNewSession = async () => {
+  // 生成新的 sessionId
+  currentSessionId.value = Date.now()
+  // 清空当前消息
+  streamMessages.value = []
+  // 重置流式状态
+  streamingContent.value = ''
+  isStreaming.value = false
+  isLoading.value = false
+  // 聚焦输入框
+  nextTick(() => {
+    inputArea.value?.focus()
+  })
+}
 </script>
 
 <style scoped>
@@ -665,6 +690,24 @@ const openSettings = () => {
   font-size: 14px;
   font-weight: 600;
   line-height: 1.2;
+}
+
+.header-badges {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.agent-badge {
+  font-size: 10px;
+  padding: 2px 6px;
+  background: rgba(255, 255, 255, 0.35);
+  border-radius: 4px;
+  font-weight: 500;
+  max-width: 80px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .model-badge {
