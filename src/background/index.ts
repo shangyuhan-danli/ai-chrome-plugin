@@ -60,6 +60,12 @@ chrome.runtime.onConnect.addListener((port) => {
       // 获取或生成 session UUID
       const sessionUUID = getSessionUUID(sessionId)
 
+      // 检查 agentId 是否存在
+      if (!agentId) {
+        port.postMessage({ type: 'error', error: '请先选择一个 Agent' })
+        return
+      }
+
       // 构建请求参数
       const chatRequest: ChatStreamRequest = {
         message,

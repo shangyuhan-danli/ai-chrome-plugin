@@ -1343,11 +1343,36 @@ const openSettings = () => {
 }
 
 .agent-dropdown-item.selected {
-  background: #eff6ff;
+  background: linear-gradient(135deg, #eff6ff 0%, #e0e7ff 100%);
+  border: 2px solid #667eea;
+  border-radius: 8px;
+  margin: 4px 8px;
+  padding: 8px 10px;
+}
+
+.agent-dropdown-item.selected .agent-dropdown-name {
+  color: #4338ca;
+  font-weight: 600;
+}
+
+.agent-dropdown-item.selected .agent-dropdown-avatar {
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.3);
+}
+
+.agent-dropdown-item:not(.selected) {
+  opacity: 0.75;
+}
+
+.agent-dropdown-item:not(.selected):hover {
+  opacity: 1;
 }
 
 .agent-dropdown-item.recommended {
   border-left: 3px solid #667eea;
+}
+
+.agent-dropdown-item.recommended.selected {
+  border-left: none;
 }
 
 .agent-dropdown-avatar {
