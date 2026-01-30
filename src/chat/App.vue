@@ -390,8 +390,8 @@ const sendMessage = async () => {
 
   nextTick(scrollToBottom)
 
-  // 如果选择了 Agent，使用流式响应
-  if (selectedAgent.value) {
+  // 如果选择了 Agent 且 id 有效，使用流式响应
+  if (selectedAgent.value && selectedAgent.value.id) {
     await sendStreamMessage(content)
   } else {
     // 使用原有的非流式方式
@@ -1343,36 +1343,16 @@ const openSettings = () => {
 }
 
 .agent-dropdown-item.selected {
-  background: linear-gradient(135deg, #eff6ff 0%, #e0e7ff 100%);
-  border: 2px solid #667eea;
-  border-radius: 8px;
-  margin: 4px 8px;
-  padding: 8px 10px;
+  background: #dbeafe;
 }
 
 .agent-dropdown-item.selected .agent-dropdown-name {
-  color: #4338ca;
+  color: #1d4ed8;
   font-weight: 600;
-}
-
-.agent-dropdown-item.selected .agent-dropdown-avatar {
-  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.3);
-}
-
-.agent-dropdown-item:not(.selected) {
-  opacity: 0.75;
-}
-
-.agent-dropdown-item:not(.selected):hover {
-  opacity: 1;
 }
 
 .agent-dropdown-item.recommended {
   border-left: 3px solid #667eea;
-}
-
-.agent-dropdown-item.recommended.selected {
-  border-left: none;
 }
 
 .agent-dropdown-avatar {
