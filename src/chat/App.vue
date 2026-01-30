@@ -418,16 +418,50 @@ const sendStreamMessage = async (content: string) => {
     const port = chrome.runtime.connect({ name: 'chat-stream' })
 
     port.onMessage.addListener((msg) => {
-      if (msg.type === 'content') {
-        streamingContent.value += msg.content
-        // 更新消息内容
-        const textBlock = streamMessages.value[messageIndex].blocks.find(b => b.type === 'text')
-        if (textBlock && textBlock.type === 'text') {
-          textBlock.text = streamingContent.value
+      if (msg.type === 'data') {
+        const data = msg.data
+
+        // 处理文本内容
+        if (data.content) {
+          streamingContent.value += data.content
+          // 更新消息内容
+          const textBlock = streamMessages.value[messageIndex].blocks.find(b => b.type === 'text')
+          if (textBlock && textBlock.type === 'text') {
+            textBlock.text = streamingContent.value
+          }
+          nextTick(scrollToBottom)
         }
-        nextTick(scrollToBottom)
+
+        // 处理工具调用 - 只有当 partial 为 false 时才添加
+        if (data.toolCall && !data.toolCall.partial) {
+          const toolBlock: ToolUseBlock = {
+            type: 'tool_use',
+            id: `tool_${Date.now()}`,
+            name: data.toolCall.tool_name,
+            input: JSON.parse(data.toolCall.arguments || '{}'),
+            status: 'pending'
+          }
+          streamMessages.value[messageIndex].blocks.push(toolBlock)
+          streamMessages.value[messageIndex].isComplete = false
+          nextTick(scrollToBottom)
+        }
+
+        // 处理思考内容（可选显示）
+        if (data.think && !data.think.partial) {
+          console.log('思考过程:', data.think.reasoning_content)
+        }
+
+        // 处理统计信息
+        if (data.statistic) {
+          console.log('Token 使用统计:', data.statistic.token_usage)
+        }
       } else if (msg.type === 'done') {
         isStreaming.value = false
+        // 如果没有 tool_call，标记为完成
+        const hasToolCall = streamMessages.value[messageIndex].blocks.some(b => b.type === 'tool_use')
+        if (!hasToolCall) {
+          streamMessages.value[messageIndex].isComplete = true
+        }
         port.disconnect()
       } else if (msg.type === 'error') {
         console.error('流式响应错误:', msg.error)
@@ -444,10 +478,9 @@ const sendStreamMessage = async (content: string) => {
       agentId: selectedAgent.value!.id,
       sessionId: currentSessionId.value,
       message: content,
-      context: {
-        url: currentPageUrl.value,
-        title: currentPageTitle.value
-      }
+      model: currentModel.value,
+      userId: 'default_user',
+      role: 'user'
     })
   } catch (error) {
     console.error('发送流式消息失败:', error)
