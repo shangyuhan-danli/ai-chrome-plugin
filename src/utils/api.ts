@@ -77,15 +77,17 @@ export class ApiService {
 
   /**
    * 获取 Agent 列表
-   * @param url 当前页面 URL，用于意图识别和智能排序
+   * @param userId 用户ID（必选）
+   * @param tags 标签过滤（可选）
    */
-  async getAgents(url?: string): Promise<{ agents: Agent[]; recommended?: string }> {
+  async getAgents(userId: string, tags?: string): Promise<{ agents: Agent[]; recommended?: string }> {
     try {
       const params = new URLSearchParams()
-      if (url) params.append('url', url)
+      params.append('user_id', userId)
+      if (tags) params.append('tags', tags)
 
       const response = await fetch(
-        `${this.config.baseUrl}/api/agents?${params}`,
+        `${this.config.baseUrl}/api/v1/agent/list?${params}`,
         { headers: this.getHeaders() }
       )
 
@@ -94,7 +96,7 @@ export class ApiService {
       }
 
       const result = await response.json()
-      return result.data || { agents: [] }
+      return { agents: result.data || result || [] }
     } catch (error) {
       console.error('获取 Agent 列表失败:', error)
       // 返回空列表，让 UI 层处理

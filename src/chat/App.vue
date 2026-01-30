@@ -290,7 +290,7 @@ const loadAgents = async () => {
   try {
     const response = await chrome.runtime.sendMessage({
       type: 'GET_AGENTS',
-      payload: { url: currentPageUrl.value }
+      payload: { userId: 'default_user' }
     })
 
     if (response.success && response.data) {

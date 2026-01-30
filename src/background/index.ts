@@ -221,7 +221,7 @@ async function handleMessage(message: ChromeMessage, sender: chrome.runtime.Mess
 
       // 新增: 获取 Agent 列表
       case 'GET_AGENTS':
-        const agentsResult = await apiService.getAgents(payload?.url)
+        const agentsResult = await apiService.getAgents(payload?.userId || 'default_user', payload?.tags)
         return { success: true, data: agentsResult }
 
       // 新增: 获取会话历史 (从远程服务)
