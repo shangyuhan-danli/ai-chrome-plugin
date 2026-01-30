@@ -96,7 +96,19 @@ export class ApiService {
       }
 
       const result = await response.json()
-      return { agents: result.data || result || [] }
+      const rawAgents = result.data || result || []
+
+      // 映射后台字段到前端字段
+      const agents: Agent[] = rawAgents.map((item: any) => ({
+        id: item.agent_id || item.id,
+        name: item.agent_name || item.name,
+        description: item.agent_description || item.description || '',
+        avatar: item.avatar,
+        tags: item.tags,
+        matchScore: item.match_score || item.matchScore
+      }))
+
+      return { agents, recommended: result.recommended }
     } catch (error) {
       console.error('获取 Agent 列表失败:', error)
       // 返回空列表，让 UI 层处理
