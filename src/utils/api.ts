@@ -163,8 +163,22 @@ export class ApiService {
           const trimmedLine = line.trim()
           if (!trimmedLine) continue
 
+          // 跳过 SSE 事件行 (event:xxx)
+          if (trimmedLine.startsWith('event:')) {
+            continue
+          }
+
+          // 处理 SSE 数据行 (data:xxx)
+          let jsonStr = trimmedLine
+          if (trimmedLine.startsWith('data:')) {
+            jsonStr = trimmedLine.slice(5).trim()
+          }
+
+          // 跳过空数据
+          if (!jsonStr) continue
+
           try {
-            const data: StreamResponse = JSON.parse(trimmedLine)
+            const data: StreamResponse = JSON.parse(jsonStr)
 
             // 检查是否是结束消息
             if (data.message === '对话完成') {
@@ -194,31 +208,47 @@ export class ApiService {
             }
           } catch (e) {
             // JSON 解析失败，跳过非标准JSON
-            console.warn('解析流式数据失败，跳过:', trimmedLine)
+            console.warn('解析流式数据失败，跳过:', jsonStr)
           }
         }
       }
 
       // 处理缓冲区中剩余的数据
       if (buffer.trim()) {
-        try {
-          const data: StreamResponse = JSON.parse(buffer.trim())
-          if (data.message === '对话完成') {
-            onDone()
-            return
+        let jsonStr = buffer.trim()
+        // 处理 SSE 格式
+        if (jsonStr.startsWith('event:')) {
+          // 跳过事件行，尝试找数据行
+          const dataMatch = jsonStr.match(/data:(.+)/)
+          if (dataMatch) {
+            jsonStr = dataMatch[1].trim()
+          } else {
+            jsonStr = ''
           }
+        } else if (jsonStr.startsWith('data:')) {
+          jsonStr = jsonStr.slice(5).trim()
+        }
 
-          const callbackData: StreamCallbackData = {}
-          if (data.content) callbackData.content = data.content
-          if (data.think) callbackData.think = data.think
-          if (data.tool_call) callbackData.toolCall = data.tool_call
-          if (data.statistic) callbackData.statistic = data.statistic
+        if (jsonStr) {
+          try {
+            const data: StreamResponse = JSON.parse(jsonStr)
+            if (data.message === '对话完成') {
+              onDone()
+              return
+            }
 
-          if (Object.keys(callbackData).length > 0) {
-            onData(callbackData)
+            const callbackData: StreamCallbackData = {}
+            if (data.content) callbackData.content = data.content
+            if (data.think) callbackData.think = data.think
+            if (data.tool_call) callbackData.toolCall = data.tool_call
+            if (data.statistic) callbackData.statistic = data.statistic
+
+            if (Object.keys(callbackData).length > 0) {
+              onData(callbackData)
+            }
+          } catch (e) {
+            // 忽略
           }
-        } catch (e) {
-          // 忽略
         }
       }
 
