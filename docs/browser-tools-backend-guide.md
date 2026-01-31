@@ -164,6 +164,8 @@ browser_tools = [
 
 ### 4.1 工具注入到系统提示词
 
+由于 Agent 框架采用 JSON 格式输出工具调用，提示词需要明确规定输出格式，确保 AI 能正确输出工具名称和参数。
+
 ```python
 import json
 from typing import List, Dict, Any, Optional
@@ -172,6 +174,11 @@ from typing import List, Dict, Any, Optional
 def generate_tools_prompt(browser_tools: List[Dict[str, Any]]) -> str:
     """
     根据浏览器工具定义生成提示词片段
+
+    生成的提示词会明确规定：
+    1. 可用的工具列表及其参数 Schema
+    2. 严格的 JSON 输出格式
+    3. 具体的调用示例
     """
     if not browser_tools:
         return ""
@@ -187,35 +194,99 @@ def generate_tools_prompt(browser_tools: List[Dict[str, Any]]) -> str:
 """
 
     for tool in browser_tools:
-        prompt += f"#### {tool['name']}\n"
-        prompt += f"**描述**: {tool['description']}\n"
-        prompt += f"**参数 Schema**:\n```json\n{json.dumps(tool['parameters'], ensure_ascii=False, indent=2)}\n```\n\n"
+        prompt += f"#### 工具名称: `{tool['name']}`\n\n"
+        prompt += f"**功能描述**: {tool['description']}\n\n"
+        prompt += f"**参数 Schema (JSON Schema 格式)**:\n```json\n{json.dumps(tool['parameters'], ensure_ascii=False, indent=2)}\n```\n\n"
 
     prompt += """
+---
+
+### 工具调用规范
+
+当你需要调用工具时，**必须严格按照以下 JSON 格式输出**：
+
+```json
+{
+    "tool_call": {
+        "tool_name": "<工具名称，必须是上述列表中的一个>",
+        "arguments": "<参数对象的 JSON 字符串>"
+    }
+}
+```
+
+**重要说明**：
+1. `tool_name` 必须**完全匹配**上述工具列表中的名称，区分大小写
+2. `arguments` 必须是**字符串类型**，内容为参数对象的 JSON 序列化结果
+3. 参数必须**严格遵循**对应工具的参数 Schema
+
+---
+
+### 调用示例
+
+#### 示例 1: 填充输入框并点击按钮
+
+用户请求: "帮我在搜索框输入 iPhone 16 然后点击搜索"
+
+正确的工具调用输出:
+```json
+{
+    "tool_call": {
+        "tool_name": "page_action",
+        "arguments": "{\\"actions\\":[{\\"action\\":\\"fill\\",\\"target\\":{\\"elementId\\":\\"e_xxx\\"},\\"params\\":{\\"value\\":\\"iPhone 16\\"}},{\\"action\\":\\"click\\",\\"target\\":{\\"elementId\\":\\"e_yyy\\"}}]}"
+    }
+}
+```
+
+等价的 arguments 解析后:
+```json
+{
+    "actions": [
+        {
+            "action": "fill",
+            "target": {"elementId": "e_xxx"},
+            "params": {"value": "iPhone 16"}
+        },
+        {
+            "action": "click",
+            "target": {"elementId": "e_yyy"}
+        }
+    ]
+}
+```
+
+#### 示例 2: 请求更多页面元素
+
+当页面元素信息不足时:
+```json
+{
+    "tool_call": {
+        "tool_name": "request_more_elements",
+        "arguments": "{\\"region\\":\\"form\\",\\"elementType\\":\\"button\\"}"
+    }
+}
+```
+
+#### 示例 3: 高亮选中文字
+
+```json
+{
+    "tool_call": {
+        "tool_name": "page_action",
+        "arguments": "{\\"actions\\":[{\\"action\\":\\"highlight\\",\\"target\\":{},\\"params\\":{\\"color\\":\\"#ffeb3b\\"}}]}"
+    }
+}
+```
+
+---
+
 ### 使用说明
 
 1. **优先使用 elementId**: 从 `current_page_info.elements` 中获取元素 ID，这是最可靠的定位方式
 2. **批量操作**: 可以在一次 `page_action` 调用中执行多个操作，按顺序执行
 3. **信息不足时**: 如果页面元素信息不足以完成任务，使用 `request_more_elements` 请求更多元素
 4. **操作确认**: 在执行敏感操作前，先向用户确认
+5. **错误处理**: 如果找不到目标元素，告知用户并尝试使用 `request_more_elements` 获取更多信息
 
-### 工具调用格式
-
-使用 tool_call 格式返回工具调用：
-```json
-{
-    "tool_name": "page_action",
-    "arguments": {
-        "actions": [
-            {
-                "action": "fill",
-                "target": {"elementId": "e_xxx"},
-                "params": {"value": "要填充的内容"}
-            }
-        ]
-    }
-}
-```
 """
 
     return prompt
@@ -229,6 +300,7 @@ def generate_page_context_prompt(page_info: Optional[Dict[str, Any]]) -> str:
         return ""
 
     prompt = f"""
+---
 
 ## 当前页面信息
 
@@ -237,18 +309,22 @@ def generate_page_context_prompt(page_info: Optional[Dict[str, Any]]) -> str:
 
 ### 可交互元素列表
 
+以下是当前页面的可交互元素，使用 `elementId` 来定位元素：
+
 """
 
     elements = page_info.get('elements', [])
     if elements:
+        prompt += "| elementId | 元素描述 |\n"
+        prompt += "|-----------|----------|\n"
         for el in elements:
-            prompt += f"- `{el['id']}`: {el['desc']}\n"
+            prompt += f"| `{el['id']}` | {el['desc']} |\n"
     else:
-        prompt += "（暂无可交互元素信息）\n"
+        prompt += "（暂无可交互元素信息，可使用 `request_more_elements` 工具获取）\n"
 
     selected_text = page_info.get('selectedText')
     if selected_text:
-        prompt += f"\n### 用户选中的文字\n\n{selected_text}\n"
+        prompt += f"\n### 用户选中的文字\n\n```\n{selected_text}\n```\n"
 
     return prompt
 
@@ -276,6 +352,49 @@ def inject_browser_context(
     page_prompt = generate_page_context_prompt(page_info)
 
     return system_prompt + tools_prompt + page_prompt
+
+
+# ============ 工具定义转换为 OpenAI Function Calling 格式 ============
+
+def convert_to_openai_tools(browser_tools: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    将浏览器工具定义转换为 OpenAI Function Calling 格式
+
+    如果你的 Agent 框架使用 OpenAI 的 tools 参数，可以用这个函数转换
+    """
+    if not browser_tools:
+        return []
+
+    openai_tools = []
+    for tool in browser_tools:
+        openai_tools.append({
+            "type": "function",
+            "function": {
+                "name": tool["name"],
+                "description": tool["description"],
+                "parameters": tool["parameters"]
+            }
+        })
+
+    return openai_tools
+
+
+def convert_to_anthropic_tools(browser_tools: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    将浏览器工具定义转换为 Anthropic Claude 的 tools 格式
+    """
+    if not browser_tools:
+        return []
+
+    anthropic_tools = []
+    for tool in browser_tools:
+        anthropic_tools.append({
+            "name": tool["name"],
+            "description": tool["description"],
+            "input_schema": tool["parameters"]
+        })
+
+    return anthropic_tools
 ```
 
 ### 4.2 处理工具调用响应
