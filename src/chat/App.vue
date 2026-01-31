@@ -546,7 +546,8 @@ const sendToolResultToBackend = async (toolId: string, result: string) => {
       model: currentModel.value,
       userId: 'default_user',
       role: 'function',
-      currentPageInfo: pageContext
+      currentPageInfo: pageContext,
+      browserTools: browserToolService.getToolDefinitions()
     })
   } catch (error) {
     console.error('发送工具结果失败:', error)
@@ -689,6 +690,9 @@ const sendStreamMessage = async (content: string) => {
     // 获取页面上下文
     const pageContext = await getPageContext(content)
 
+    // 获取浏览器工具定义
+    const browserTools = browserToolService.getToolDefinitions()
+
     port.postMessage({
       agentId: selectedAgent.value!.id,
       sessionId: currentSessionId.value,
@@ -696,7 +700,8 @@ const sendStreamMessage = async (content: string) => {
       model: currentModel.value,
       userId: 'default_user',
       role: 'user',
-      currentPageInfo: pageContext
+      currentPageInfo: pageContext,
+      browserTools: browserTools
     })
   } catch (error) {
     console.error('发送流式消息失败:', error)
@@ -855,6 +860,9 @@ const handleToolResponse = async (toolId: string, approved: boolean) => {
     // 获取页面上下文
     const pageContext = await getPageContext()
 
+    // 获取浏览器工具定义
+    const browserTools = browserToolService.getToolDefinitions()
+
     // 发送工具响应
     port.postMessage({
       agentId: selectedAgent.value?.id || '',
@@ -863,7 +871,8 @@ const handleToolResponse = async (toolId: string, approved: boolean) => {
       model: currentModel.value,
       userId: 'default_user',
       role: 'function',
-      currentPageInfo: pageContext
+      currentPageInfo: pageContext,
+      browserTools: browserTools
     })
   } catch (error) {
     console.error('处理工具响应失败:', error)

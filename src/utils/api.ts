@@ -1,6 +1,7 @@
 // API 服务层 - 对接后台服务
 import type { StreamResponse, ThinkContent, ToolCallContent, Statistic } from './types'
 import type { PageContext } from './pageActionTypes'
+import type { BrowserToolDefinition } from './browserToolService'
 
 export interface Agent {
   id: string
@@ -18,7 +19,8 @@ export interface ChatStreamRequest {
   agent_id: string
   session_id: string
   user_id: string
-  current_page_info?: PageContext  // 新增：当前页面信息
+  current_page_info?: PageContext           // 当前页面信息
+  browser_tools?: BrowserToolDefinition[]   // 浏览器支持的工具列表
 }
 
 // 流式响应回调数据
