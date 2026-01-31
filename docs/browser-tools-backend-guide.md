@@ -4,15 +4,53 @@
 
 浏览器插件会在每次聊天请求中动态传递其支持的工具定义（`browser_tools`），后端需要将这些工具注入到 Agent 的系统提示词中，使 AI 能够在合适的时机调用这些工具来操作网页。
 
-## 二、请求格式
+## 二、工具执行流程
 
-### 2.1 Chat API 请求结构
+### 2.1 核心流程说明
+
+**所有工具都需要用户点击 Approve 后才会执行**，区别在于执行位置：
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    后端返回 tool_call                        │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│              前端显示工具调用，等待用户确认                    │
+│                  [Approve]  [Reject]                        │
+└─────────────────────────────────────────────────────────────┘
+                              │
+              ┌───────────────┴───────────────┐
+              │                               │
+              ▼                               ▼
+┌─────────────────────────┐     ┌─────────────────────────┐
+│    浏览器工具 (DOM)      │     │    非浏览器工具          │
+│                         │     │                         │
+│  1. 浏览器本地执行       │     │  1. 发送 role: function │
+│  2. 发送 role: user     │     │  2. 后端执行工具         │
+│     (包含执行结果)       │     │  3. 返回执行结果         │
+└─────────────────────────┘     └─────────────────────────┘
+```
+
+### 2.2 两种工具类型对比
+
+| 特性 | 浏览器工具 (DOM) | 非浏览器工具 |
+|-----|-----------------|-------------|
+| 执行位置 | 浏览器插件本地执行 | 后端服务执行 |
+| 用户确认 | 需要点击 Approve | 需要点击 Approve |
+| 结果发送 | `role: "user"` | `role: "function"` |
+| 示例 | page_action, request_more_elements | search_web, query_database |
+
+## 三、请求格式
+
+### 3.1 Chat API 请求结构
 
 ```python
 # POST /api/v1/agent/chat
 {
     "message": "帮我在搜索框输入 iPhone 16 然后点击搜索",
-    "role": "user",  # 或 "function"
+    "role": "user",  # "user" 或 "function"
     "model": "claude-3-opus",
     "agent_id": "agent_xxx",
     "session_id": "uuid-xxx",
@@ -33,7 +71,7 @@
 }
 ```
 
-### 2.2 browser_tools 完整结构
+### 3.2 browser_tools 完整结构
 
 ```python
 browser_tools = [
@@ -122,9 +160,9 @@ browser_tools = [
 ]
 ```
 
-## 三、后端处理逻辑
+## 四、后端处理逻辑
 
-### 3.1 工具注入到系统提示词
+### 4.1 工具注入到系统提示词
 
 ```python
 import json
@@ -240,7 +278,7 @@ def inject_browser_context(
     return system_prompt + tools_prompt + page_prompt
 ```
 
-### 3.2 处理工具调用响应
+### 4.2 处理工具调用响应
 
 当 AI 返回工具调用时，需要以特定格式返回给前端：
 
@@ -300,41 +338,86 @@ def handle_ai_response(ai_output: str) -> dict:
     )
 ```
 
-### 3.3 处理工具执行结果
+### 4.3 处理工具执行结果
 
-前端执行工具后会将结果作为 `role: "function"` 的消息发回：
+根据工具类型，前端会以不同的 role 发送结果：
+
+#### 4.3.1 浏览器工具结果 (role: "user")
+
+浏览器工具由插件本地执行，执行完后以 `role: "user"` 发送结果：
 
 ```python
-def handle_tool_result(message: str) -> dict:
-    """
-    处理工具执行结果
-
-    前端发送的 message 格式:
-    {
-        "tool_id": "tool_xxx",
-        "result": "{\"success\": true, \"results\": [...], \"summary\": \"执行了 2 个操作，成功 2 个\"}"
-    }
-    """
-    data = json.loads(message)
-    tool_id = data.get("tool_id")
-    result = json.loads(data.get("result", "{}"))
-
-    # 将结果添加到对话上下文中
-    context_message = f"工具执行结果: {result.get('summary', '未知')}"
-
-    if not result.get("success"):
-        context_message = f"工具执行失败: {result.get('error', '未知错误')}"
-
-    return {
-        "role": "function",
-        "content": context_message,
-        "tool_id": tool_id
-    }
+# 前端发送的请求
+{
+    "message": "浏览器工具 page_action 执行结果: {\"success\": true, \"results\": [...], \"summary\": \"执行了 2 个操作，成功 2 个\"}",
+    "role": "user",  # 注意：浏览器工具用 user
+    "agent_id": "agent_xxx",
+    "session_id": "uuid-xxx",
+    ...
+}
 ```
 
-## 四、完整示例
+后端处理：
+```python
+def handle_browser_tool_result(request: ChatRequest) -> str:
+    """
+    处理浏览器工具执行结果（role: user）
 
-### 4.1 FastAPI 路由示例
+    浏览器工具的结果作为普通用户消息处理，
+    AI 会根据结果继续对话
+    """
+    # message 格式: "浏览器工具 {tool_name} 执行结果: {json_result}"
+    message = request.message
+
+    # 直接作为用户消息添加到对话历史
+    # AI 会看到这个结果并继续响应
+    return message
+```
+
+#### 4.3.2 非浏览器工具结果 (role: "function")
+
+非浏览器工具由后端执行，前端只发送确认信息：
+
+```python
+# 前端发送的请求
+{
+    "message": "{\"toolId\": \"tool_xxx\", \"approved\": true}",
+    "role": "function",  # 注意：非浏览器工具用 function
+    "agent_id": "agent_xxx",
+    "session_id": "uuid-xxx",
+    ...
+}
+```
+
+后端处理：
+```python
+def handle_non_browser_tool_approved(request: ChatRequest):
+    """
+    处理非浏览器工具确认（role: function）
+
+    后端需要自己执行工具，然后返回结果
+    """
+    data = json.loads(request.message)
+    tool_id = data.get("toolId")
+    approved = data.get("approved")
+
+    if not approved:
+        # 用户拒绝，返回拒绝消息
+        return {"content": "用户取消了工具执行"}
+
+    # 从会话上下文中获取待执行的工具调用
+    pending_tool = get_pending_tool_call(request.session_id, tool_id)
+
+    # 执行工具
+    result = execute_tool(pending_tool.tool_name, pending_tool.arguments)
+
+    # 将结果添加到对话上下文，继续 AI 响应
+    return continue_conversation_with_tool_result(request.session_id, result)
+```
+
+## 五、完整示例
+
+### 5.1 FastAPI 路由示例
 
 ```python
 from fastapi import APIRouter, Request
@@ -437,7 +520,7 @@ async def call_ai_model(
     }
 ```
 
-## 五、注意事项
+## 六、注意事项
 
 1. **兼容性处理**: 如果 `browser_tools` 为空或不存在，不要注入工具相关的提示词
 2. **Token 优化**: 页面元素列表可能很长，前端已经做了智能筛选（最多 30 个），但仍需注意 Token 消耗
@@ -446,7 +529,7 @@ async def call_ai_model(
    - 对于密码框等敏感元素，前端不会传递 value 值
 4. **错误处理**: 工具执行可能失败，需要优雅处理并告知用户
 
-## 六、工具执行结果格式
+## 七、工具执行结果格式
 
 前端执行工具后返回的结果格式：
 

@@ -433,27 +433,6 @@ const executeBrowserTool = async (toolName: string, argsJson: string): Promise<s
   return await browserToolService.execute(toolName, argsJson)
 }
 
-// 自动处理浏览器工具调用（DOM工具由浏览器执行，结果作为 user 消息发送）
-const handleBrowserToolCall = async (toolCall: ToolUseBlock, messageIndex: number) => {
-  // 标记为已批准（浏览器工具自动执行）
-  toolCall.status = 'approved'
-
-  // 执行工具
-  const result = await executeBrowserTool(toolCall.name, JSON.stringify(toolCall.input))
-
-  // 解析结果用于显示
-  let resultSummary = ''
-  try {
-    const resultObj = JSON.parse(result)
-    resultSummary = resultObj.summary || resultObj.message || (resultObj.success ? '执行成功' : '执行失败')
-  } catch {
-    resultSummary = result
-  }
-
-  // 将结果作为 user 消息发送给后端（DOM工具执行结果）
-  await sendBrowserToolResultAsUser(toolCall.name, result, resultSummary)
-}
-
 // 发送浏览器工具执行结果给后端（作为 user 消息）
 const sendBrowserToolResultAsUser = async (toolName: string, result: string, resultSummary: string) => {
   // 添加一个用户消息显示工具执行结果
@@ -529,15 +508,7 @@ const sendBrowserToolResultAsUser = async (toolName: string, result: string, res
         if (pendingToolCall) {
           streamMessages.value[messageIndex].blocks.push(pendingToolCall)
           streamMessages.value[messageIndex].isComplete = false
-
-          // 如果是浏览器工具，自动执行
-          if (browserToolService.isBrowserTool(pendingToolCall.name)) {
-            port.disconnect()
-            nextTick(() => {
-              handleBrowserToolCall(pendingToolCall!, messageIndex)
-            })
-            return
-          }
+          // 所有工具都需要用户确认，不自动执行
         } else {
           if (streamingContent.value) {
             streamMessages.value[messageIndex].blocks.push({ type: 'text', text: streamingContent.value })
@@ -677,15 +648,7 @@ const sendStreamMessage = async (content: string) => {
         if (lastToolCall) {
           streamMessages.value[messageIndex].blocks.push(lastToolCall)
           streamMessages.value[messageIndex].isComplete = false
-
-          // 如果是浏览器工具，自动执行
-          if (browserToolService.isBrowserTool(lastToolCall.name)) {
-            port.disconnect()
-            nextTick(() => {
-              handleBrowserToolCall(lastToolCall!, messageIndex)
-            })
-            return
-          }
+          // 所有工具都需要用户确认，不自动执行
         } else {
           // 没有工具调用，保留文本内容（如果没有 think 和 tool_call，说明是普通回复）
           if (!lastThink && streamingContent.value) {
@@ -760,11 +723,14 @@ const sendNonStreamMessage = async (content: string) => {
   }
 }
 
-// 处理工具响应
+// 处理工具响应（用户点击 Approve/Reject 后调用）
 const handleToolResponse = async (toolId: string, approved: boolean) => {
+  // 找到对应的工具调用
   const lastMsg = streamMessages.value[streamMessages.value.length - 1]
+  let toolBlock: ToolUseBlock | undefined
+
   if (lastMsg && lastMsg.role === 'assistant') {
-    const toolBlock = lastMsg.blocks.find(
+    toolBlock = lastMsg.blocks.find(
       (b) => b.type === 'tool_use' && (b as ToolUseBlock).id === toolId
     ) as ToolUseBlock | undefined
 
@@ -773,11 +739,44 @@ const handleToolResponse = async (toolId: string, approved: boolean) => {
     }
   }
 
-  // 使用流式接口发送工具响应
+  // 如果用户拒绝，不执行任何操作
+  if (!approved) {
+    return
+  }
+
+  // 根据工具类型决定执行方式
+  if (toolBlock && browserToolService.isBrowserTool(toolBlock.name)) {
+    // 浏览器工具：本地执行，然后发 role: 'user'
+    await handleBrowserToolApproved(toolBlock)
+  } else {
+    // 非浏览器工具：发 role: 'function' 给后端执行
+    await handleNonBrowserToolApproved(toolId)
+  }
+}
+
+// 处理浏览器工具批准（本地执行，发 role: 'user'）
+const handleBrowserToolApproved = async (toolBlock: ToolUseBlock) => {
+  // 执行工具
+  const result = await executeBrowserTool(toolBlock.name, JSON.stringify(toolBlock.input))
+
+  // 解析结果用于显示
+  let resultSummary = ''
+  try {
+    const resultObj = JSON.parse(result)
+    resultSummary = resultObj.summary || resultObj.message || (resultObj.success ? '执行成功' : '执行失败')
+  } catch {
+    resultSummary = result
+  }
+
+  // 将结果作为 user 消息发送给后端
+  await sendBrowserToolResultAsUser(toolBlock.name, result, resultSummary)
+}
+
+// 处理非浏览器工具批准（发 role: 'function' 给后端执行）
+const handleNonBrowserToolApproved = async (toolId: string) => {
   isStreaming.value = true
   streamingContent.value = ''
 
-  // 添加一个空的 assistant 消息用于显示流式内容
   const assistantMessage: ExtendedStreamMessage = {
     sessionId: currentSessionId.value,
     role: 'assistant',
@@ -797,7 +796,6 @@ const handleToolResponse = async (toolId: string, approved: boolean) => {
       if (msg.type === 'data') {
         const data = msg.data
 
-        // 处理文本内容 - 流式过程中不断拼接显示
         if (data.content) {
           streamingContent.value += data.content
           const textBlock = streamMessages.value[messageIndex].blocks.find(b => b.type === 'text')
@@ -807,12 +805,10 @@ const handleToolResponse = async (toolId: string, approved: boolean) => {
           nextTick(scrollToBottom)
         }
 
-        // 收集思考内容
         if (data.think && data.think.reasoning_content) {
           currentThink += data.think.reasoning_content
         }
 
-        // 收集工具调用
         if (data.toolCall && data.toolCall.tool_name) {
           try {
             pendingToolCall = {
@@ -827,37 +823,22 @@ const handleToolResponse = async (toolId: string, approved: boolean) => {
           }
         }
 
-        // 处理统计信息
         if (data.statistic) {
           console.log('Token 使用统计:', data.statistic.token_usage)
         }
       } else if (msg.type === 'done') {
-        // 流式传输完成 - 用 think 和 tool_call 替换原始 content 显示
         isStreaming.value = false
-
-        // 清空 blocks，重新构建
         streamMessages.value[messageIndex].blocks = []
 
-        // 如果有思考内容，添加 think
         if (currentThink) {
           streamMessages.value[messageIndex].think = currentThink
         }
 
-        // 如果有工具调用，添加 tool_call 块
         if (pendingToolCall) {
           streamMessages.value[messageIndex].blocks.push(pendingToolCall)
           streamMessages.value[messageIndex].isComplete = false
-
-          // 如果是浏览器工具，自动执行
-          if (browserToolService.isBrowserTool(pendingToolCall.name)) {
-            port.disconnect()
-            nextTick(() => {
-              handleBrowserToolCall(pendingToolCall!, messageIndex)
-            })
-            return
-          }
+          // 所有工具都需要用户确认，不自动执行
         } else {
-          // 没有工具调用，保留文本内容
           if (!currentThink && streamingContent.value) {
             streamMessages.value[messageIndex].blocks.push({ type: 'text', text: streamingContent.value })
           }
@@ -877,29 +858,22 @@ const handleToolResponse = async (toolId: string, approved: boolean) => {
       }
     })
 
-    // 获取页面上下文
     const pageContext = await getPageContext()
-
-    // 获取浏览器工具定义
     const browserTools = browserToolService.getToolDefinitions()
 
-    // 发送工具响应
+    // 非浏览器工具：发 role: 'function' 给后端执行
     port.postMessage({
       agentId: selectedAgent.value?.id || '',
       sessionId: currentSessionId.value,
-      message: JSON.stringify({ toolId, approved }),
+      message: JSON.stringify({ toolId, approved: true }),
       model: currentModel.value,
       userId: 'default_user',
-      role: 'function',
+      role: 'function',  // 非浏览器工具用 function
       currentPageInfo: pageContext,
       browserTools: browserTools
     })
   } catch (error) {
     console.error('处理工具响应失败:', error)
-    const textBlock = streamMessages.value[messageIndex].blocks.find(b => b.type === 'text')
-    if (textBlock && textBlock.type === 'text') {
-      textBlock.text = `发送失败: ${error}`
-    }
     isStreaming.value = false
   }
 }
