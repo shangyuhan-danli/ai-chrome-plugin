@@ -659,7 +659,7 @@ const sendStreamMessage = async (content: string) => {
           streamMessages.value[messageIndex].isComplete = false
 
           // 如果是浏览器工具，自动执行
-          if (isBrowserTool(lastToolCall.name)) {
+          if (browserToolService.isBrowserTool(lastToolCall.name)) {
             port.disconnect()
             nextTick(() => {
               handleBrowserToolCall(lastToolCall!, messageIndex)
