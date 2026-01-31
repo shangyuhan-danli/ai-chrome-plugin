@@ -433,7 +433,7 @@ const executeBrowserTool = async (toolName: string, argsJson: string): Promise<s
   return await browserToolService.execute(toolName, argsJson)
 }
 
-// 自动处理浏览器工具调用
+// 自动处理浏览器工具调用（DOM工具由浏览器执行，结果作为 user 消息发送）
 const handleBrowserToolCall = async (toolCall: ToolUseBlock, messageIndex: number) => {
   // 标记为已批准（浏览器工具自动执行）
   toolCall.status = 'approved'
@@ -441,12 +441,32 @@ const handleBrowserToolCall = async (toolCall: ToolUseBlock, messageIndex: numbe
   // 执行工具
   const result = await executeBrowserTool(toolCall.name, JSON.stringify(toolCall.input))
 
-  // 将结果作为 function 消息发送给后端
-  await sendToolResultToBackend(toolCall.id, result)
+  // 解析结果用于显示
+  let resultSummary = ''
+  try {
+    const resultObj = JSON.parse(result)
+    resultSummary = resultObj.summary || resultObj.message || (resultObj.success ? '执行成功' : '执行失败')
+  } catch {
+    resultSummary = result
+  }
+
+  // 将结果作为 user 消息发送给后端（DOM工具执行结果）
+  await sendBrowserToolResultAsUser(toolCall.name, result, resultSummary)
 }
 
-// 发送工具执行结果给后端
-const sendToolResultToBackend = async (toolId: string, result: string) => {
+// 发送浏览器工具执行结果给后端（作为 user 消息）
+const sendBrowserToolResultAsUser = async (toolName: string, result: string, resultSummary: string) => {
+  // 添加一个用户消息显示工具执行结果
+  const userResultMessage: StreamMessage = {
+    sessionId: currentSessionId.value,
+    role: 'user',
+    blocks: [{ type: 'text', text: `[工具 ${toolName} 执行结果]: ${resultSummary}` }],
+    createdAt: Date.now()
+  }
+  streamMessages.value.push(userResultMessage)
+  nextTick(scrollToBottom)
+
+  // 发送给后端
   isStreaming.value = true
   streamingContent.value = ''
 
@@ -538,14 +558,14 @@ const sendToolResultToBackend = async (toolId: string, result: string) => {
       }
     })
 
-    // 发送工具执行结果
+    // 发送工具执行结果作为 user 消息
     port.postMessage({
       agentId: selectedAgent.value?.id || '',
       sessionId: currentSessionId.value,
-      message: JSON.stringify({ tool_id: toolId, result }),
+      message: `浏览器工具 ${toolName} 执行结果: ${result}`,
       model: currentModel.value,
       userId: 'default_user',
-      role: 'function',
+      role: 'user',  // DOM 工具结果作为 user 消息
       currentPageInfo: pageContext,
       browserTools: browserToolService.getToolDefinitions()
     })
