@@ -192,6 +192,8 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, nextTick, watch } from 'vue'
 import type { StreamMessage, ToolUseBlock, ContentBlock } from '../utils/types'
+import type { PageContext, PageAction, ActionResult, BatchActionResult } from '../utils/pageActionTypes'
+import { browserToolService } from '../utils/browserToolService'
 
 // 扩展 StreamMessage 类型以支持 think
 interface ExtendedStreamMessage extends StreamMessage {
@@ -241,6 +243,9 @@ const currentModel = ref('gpt-3.5-turbo')
 // 流式响应相关
 const streamingContent = ref('')
 const isStreaming = ref(false)
+
+// 页面上下文缓存
+const cachedPageContext = ref<PageContext | null>(null)
 
 // 检测是否在 iframe 中
 const isInIframe = computed(() => window.self !== window.top)
@@ -396,6 +401,159 @@ const formatToolInput = (input: Record<string, any>): string => {
   return JSON.stringify(input, null, 2)
 }
 
+// 获取当前页面上下文
+const getPageContext = async (userMessage: string = ''): Promise<PageContext | null> => {
+  // 只有在 iframe 中才能获取页面上下文
+  if (!isInIframe.value) {
+    return null
+  }
+
+  try {
+    // 获取当前活动标签页
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
+    if (!tab?.id) return null
+
+    const response = await chrome.tabs.sendMessage(tab.id, {
+      type: 'GET_PAGE_CONTEXT',
+      payload: { userMessage }
+    })
+
+    if (response?.success) {
+      cachedPageContext.value = response.data
+      return response.data
+    }
+  } catch (error) {
+    console.error('获取页面上下文失败:', error)
+  }
+  return null
+}
+
+// 执行浏览器工具调用
+const executeBrowserTool = async (toolName: string, argsJson: string): Promise<string> => {
+  return await browserToolService.execute(toolName, argsJson)
+}
+
+// 自动处理浏览器工具调用
+const handleBrowserToolCall = async (toolCall: ToolUseBlock, messageIndex: number) => {
+  // 标记为已批准（浏览器工具自动执行）
+  toolCall.status = 'approved'
+
+  // 执行工具
+  const result = await executeBrowserTool(toolCall.name, JSON.stringify(toolCall.input))
+
+  // 将结果作为 function 消息发送给后端
+  await sendToolResultToBackend(toolCall.id, result)
+}
+
+// 发送工具执行结果给后端
+const sendToolResultToBackend = async (toolId: string, result: string) => {
+  isStreaming.value = true
+  streamingContent.value = ''
+
+  const assistantMessage: ExtendedStreamMessage = {
+    sessionId: currentSessionId.value,
+    role: 'assistant',
+    blocks: [{ type: 'text', text: '' }],
+    createdAt: Date.now()
+  }
+  streamMessages.value.push(assistantMessage)
+  const messageIndex = streamMessages.value.length - 1
+
+  let currentThink = ''
+  let pendingToolCall: ToolUseBlock | null = null
+
+  try {
+    // 获取最新的页面上下文
+    const pageContext = await getPageContext()
+
+    const port = chrome.runtime.connect({ name: 'chat-stream' })
+
+    port.onMessage.addListener(async (msg) => {
+      if (msg.type === 'data') {
+        const data = msg.data
+
+        if (data.content) {
+          streamingContent.value += data.content
+          const textBlock = streamMessages.value[messageIndex].blocks.find(b => b.type === 'text')
+          if (textBlock && textBlock.type === 'text') {
+            textBlock.text = streamingContent.value
+          }
+          nextTick(scrollToBottom)
+        }
+
+        if (data.think && data.think.reasoning_content) {
+          currentThink = data.think.reasoning_content
+        }
+
+        if (data.toolCall && data.toolCall.tool_name) {
+          try {
+            pendingToolCall = {
+              type: 'tool_use',
+              id: `tool_${Date.now()}`,
+              name: data.toolCall.tool_name,
+              input: JSON.parse(data.toolCall.arguments || '{}'),
+              status: 'pending'
+            }
+          } catch (e) {
+            console.error('解析工具参数失败:', e)
+          }
+        }
+      } else if (msg.type === 'done') {
+        isStreaming.value = false
+        streamMessages.value[messageIndex].blocks = []
+
+        if (currentThink) {
+          streamMessages.value[messageIndex].think = currentThink
+        }
+
+        if (pendingToolCall) {
+          streamMessages.value[messageIndex].blocks.push(pendingToolCall)
+          streamMessages.value[messageIndex].isComplete = false
+
+          // 如果是浏览器工具，自动执行
+          if (browserToolService.isBrowserTool(pendingToolCall.name)) {
+            port.disconnect()
+            nextTick(() => {
+              handleBrowserToolCall(pendingToolCall!, messageIndex)
+            })
+            return
+          }
+        } else {
+          if (streamingContent.value) {
+            streamMessages.value[messageIndex].blocks.push({ type: 'text', text: streamingContent.value })
+          }
+          streamMessages.value[messageIndex].isComplete = true
+        }
+
+        port.disconnect()
+        nextTick(scrollToBottom)
+      } else if (msg.type === 'error') {
+        console.error('流式响应错误:', msg.error)
+        const textBlock = streamMessages.value[messageIndex].blocks.find(b => b.type === 'text')
+        if (textBlock && textBlock.type === 'text') {
+          textBlock.text = `错误: ${msg.error}`
+        }
+        isStreaming.value = false
+        port.disconnect()
+      }
+    })
+
+    // 发送工具执行结果
+    port.postMessage({
+      agentId: selectedAgent.value?.id || '',
+      sessionId: currentSessionId.value,
+      message: JSON.stringify({ tool_id: toolId, result }),
+      model: currentModel.value,
+      userId: 'default_user',
+      role: 'function',
+      currentPageInfo: pageContext
+    })
+  } catch (error) {
+    console.error('发送工具结果失败:', error)
+    isStreaming.value = false
+  }
+}
+
 const sendMessage = async () => {
   if (!inputMessage.value.trim() || isLoading.value || isStreaming.value || waitingForToolResponse.value) return
 
@@ -498,6 +656,15 @@ const sendStreamMessage = async (content: string) => {
         if (lastToolCall) {
           streamMessages.value[messageIndex].blocks.push(lastToolCall)
           streamMessages.value[messageIndex].isComplete = false
+
+          // 如果是浏览器工具，自动执行
+          if (isBrowserTool(lastToolCall.name)) {
+            port.disconnect()
+            nextTick(() => {
+              handleBrowserToolCall(lastToolCall!, messageIndex)
+            })
+            return
+          }
         } else {
           // 没有工具调用，保留文本内容（如果没有 think 和 tool_call，说明是普通回复）
           if (!lastThink && streamingContent.value) {
@@ -519,13 +686,17 @@ const sendStreamMessage = async (content: string) => {
       }
     })
 
+    // 获取页面上下文
+    const pageContext = await getPageContext(content)
+
     port.postMessage({
       agentId: selectedAgent.value!.id,
       sessionId: currentSessionId.value,
       message: content,
       model: currentModel.value,
       userId: 'default_user',
-      role: 'user'
+      role: 'user',
+      currentPageInfo: pageContext
     })
   } catch (error) {
     console.error('发送流式消息失败:', error)
@@ -651,6 +822,15 @@ const handleToolResponse = async (toolId: string, approved: boolean) => {
         if (pendingToolCall) {
           streamMessages.value[messageIndex].blocks.push(pendingToolCall)
           streamMessages.value[messageIndex].isComplete = false
+
+          // 如果是浏览器工具，自动执行
+          if (browserToolService.isBrowserTool(pendingToolCall.name)) {
+            port.disconnect()
+            nextTick(() => {
+              handleBrowserToolCall(pendingToolCall!, messageIndex)
+            })
+            return
+          }
         } else {
           // 没有工具调用，保留文本内容
           if (!currentThink && streamingContent.value) {
@@ -672,6 +852,9 @@ const handleToolResponse = async (toolId: string, approved: boolean) => {
       }
     })
 
+    // 获取页面上下文
+    const pageContext = await getPageContext()
+
     // 发送工具响应
     port.postMessage({
       agentId: selectedAgent.value?.id || '',
@@ -679,7 +862,8 @@ const handleToolResponse = async (toolId: string, approved: boolean) => {
       message: JSON.stringify({ toolId, approved }),
       model: currentModel.value,
       userId: 'default_user',
-      role: 'function'
+      role: 'function',
+      currentPageInfo: pageContext
     })
   } catch (error) {
     console.error('处理工具响应失败:', error)

@@ -1,4 +1,8 @@
 import './style.css'
+import './actionStyles.css'
+import { getPageContext, requestMoreElements, getElementById } from './elementCollector'
+import { executeAction, executeBatchActions, clearAllStyles } from './actionExecutor'
+import type { PageAction } from '../utils/pageActionTypes'
 
 let chatFrame: HTMLIFrameElement | null = null
 let chatContainer: HTMLDivElement | null = null
@@ -246,6 +250,45 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       isPinned: isPinned,
       sessionId: currentSessionId
     })
+  }
+  // ========== 页面操作相关消息处理 ==========
+  else if (message.type === 'GET_PAGE_CONTEXT') {
+    // 获取页面上下文（包含可交互元素）
+    const userMessage = message.payload?.userMessage || ''
+    const context = getPageContext(userMessage)
+    sendResponse({ success: true, data: context })
+  }
+  else if (message.type === 'REQUEST_MORE_ELEMENTS') {
+    // 请求更多元素
+    const params = message.payload || {}
+    const elements = requestMoreElements(params)
+    sendResponse({ success: true, data: elements })
+  }
+  else if (message.type === 'EXECUTE_PAGE_ACTION') {
+    // 执行单个页面操作
+    const action = message.payload as PageAction
+    executeAction(action).then(result => {
+      sendResponse({ success: result.success, data: result })
+    })
+    return true // 异步响应
+  }
+  else if (message.type === 'EXECUTE_BATCH_ACTIONS') {
+    // 批量执行页面操作
+    const actions = message.payload as PageAction[]
+    executeBatchActions(actions).then(result => {
+      sendResponse({ success: result.success, data: result })
+    })
+    return true // 异步响应
+  }
+  else if (message.type === 'CLEAR_AI_STYLES') {
+    // 清除 AI 添加的样式
+    clearAllStyles()
+    sendResponse({ success: true })
+  }
+  else if (message.type === 'GET_SELECTED_TEXT') {
+    // 获取用户选中的文字
+    const selectedText = window.getSelection()?.toString() || ''
+    sendResponse({ success: true, data: selectedText })
   }
   return true
 })

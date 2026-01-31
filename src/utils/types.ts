@@ -126,6 +126,13 @@ export type MessageType =
   | 'RECOGNIZE_INTENT'
   // 工具确认相关
   | 'TOOL_RESPONSE'
+  // 页面操作相关
+  | 'GET_PAGE_CONTEXT'
+  | 'REQUEST_MORE_ELEMENTS'
+  | 'EXECUTE_PAGE_ACTION'
+  | 'EXECUTE_BATCH_ACTIONS'
+  | 'CLEAR_AI_STYLES'
+  | 'GET_SELECTED_TEXT'
 
 export interface ChromeMessage {
   type: MessageType

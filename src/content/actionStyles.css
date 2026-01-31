@@ -1,0 +1,103 @@
+/* AI 操作相关样式 */
+
+/* 高亮样式 */
+.ai-highlight {
+  background-color: #ffeb3b !important;
+  padding: 2px 0 !important;
+  border-radius: 2px !important;
+  transition: background-color 0.3s ease !important;
+}
+
+.ai-highlight:hover {
+  background-color: #fdd835 !important;
+}
+
+/* 下划线样式 */
+.ai-underline {
+  text-decoration: underline !important;
+  text-decoration-color: #1a73e8 !important;
+  text-decoration-thickness: 2px !important;
+  text-underline-offset: 2px !important;
+}
+
+/* 操作目标元素的临时高亮效果 */
+.ai-action-target {
+  outline: 2px solid #667eea !important;
+  outline-offset: 2px !important;
+  animation: ai-pulse 1s ease-in-out !important;
+}
+
+@keyframes ai-pulse {
+  0% {
+    outline-color: #667eea;
+    outline-offset: 2px;
+  }
+  50% {
+    outline-color: #764ba2;
+    outline-offset: 4px;
+  }
+  100% {
+    outline-color: #667eea;
+    outline-offset: 2px;
+  }
+}
+
+/* 操作成功的视觉反馈 */
+.ai-action-success {
+  animation: ai-success-flash 0.5s ease-out !important;
+}
+
+@keyframes ai-success-flash {
+  0% {
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+  }
+  70% {
+    box-shadow: 0 0 0 10px rgba(16, 185, 129, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
+  }
+}
+
+/* 操作失败的视觉反馈 */
+.ai-action-error {
+  animation: ai-error-shake 0.5s ease-out !important;
+}
+
+@keyframes ai-error-shake {
+  0%, 100% {
+    transform: translateX(0);
+  }
+  10%, 30%, 50%, 70%, 90% {
+    transform: translateX(-5px);
+  }
+  20%, 40%, 60%, 80% {
+    transform: translateX(5px);
+  }
+}
+
+/* 元素被 AI 操作时的提示标签 */
+.ai-action-tooltip {
+  position: absolute;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  white-space: nowrap;
+  z-index: 2147483647;
+  pointer-events: none;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.ai-action-tooltip::after {
+  content: '';
+  position: absolute;
+  bottom: -6px;
+  left: 50%;
+  transform: translateX(-50%);
+  border-width: 6px 6px 0;
+  border-style: solid;
+  border-color: #764ba2 transparent transparent;
+}

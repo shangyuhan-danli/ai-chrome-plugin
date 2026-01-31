@@ -3,6 +3,7 @@ import { chatDB } from '../utils/db'
 import { apiService } from '../utils/api'
 import type { ChatStreamRequest, StreamCallbackData } from '../utils/api'
 import type { ChromeMessage, ContentBlock, ToolUseBlock } from '../utils/types'
+import type { PageContext } from '../utils/pageActionTypes'
 
 // 生成 UUID
 function generateUUID(): string {
@@ -50,7 +51,7 @@ function getSessionUUID(localSessionId: number): string {
 chrome.runtime.onConnect.addListener((port) => {
   if (port.name === 'chat-stream') {
     port.onMessage.addListener(async (request) => {
-      const { agentId, sessionId, message, model, userId, role } = request
+      const { agentId, sessionId, message, model, userId, role, currentPageInfo } = request
 
       // 如果是用户消息，保存到本地
       if (role === 'user') {
@@ -73,7 +74,8 @@ chrome.runtime.onConnect.addListener((port) => {
         model: model || 'claude-3-opus',
         agent_id: agentId,
         session_id: sessionUUID,
-        user_id: userId || 'default_user'
+        user_id: userId || 'default_user',
+        current_page_info: currentPageInfo  // 传递页面上下文
       }
 
       // 调用流式 API
