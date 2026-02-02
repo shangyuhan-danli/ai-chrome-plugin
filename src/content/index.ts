@@ -7,6 +7,7 @@ import type { PageAction } from '../utils/pageActionTypes'
 let chatFrame: HTMLIFrameElement | null = null
 let chatContainer: HTMLDivElement | null = null
 let currentSessionId: number | null = null
+let currentTabId: number | null = null
 let isPinned: boolean = false
 let styleElement: HTMLStyleElement | null = null
 
@@ -16,6 +17,65 @@ function getPageInfo() {
     url: window.location.href,
     title: document.title
   }
+}
+
+// 获取或创建当前标签页的会话
+async function getOrCreateSessionForTab(): Promise<number> {
+  // 先获取当前标签页 ID
+  const tabs = await chrome.tabs.query({ active: true, currentWindow: true })
+  const tabId = tabs[0]?.id
+
+  if (!tabId) {
+    // 如果无法获取 tabId，创建一个基于时间戳的会话
+    const pageInfo = getPageInfo()
+    const response = await chrome.runtime.sendMessage({
+      type: 'CREATE_SESSION',
+      payload: {
+        title: pageInfo.title || '新对话',
+        pageUrl: pageInfo.url,
+        pageTitle: pageInfo.title
+      }
+    })
+    return response.data.id
+  }
+
+  currentTabId = tabId
+
+  // 检查该标签页是否已有会话
+  const existingSession = await chrome.runtime.sendMessage({
+    type: 'GET_SESSION_BY_TAB',
+    payload: { tabId }
+  })
+
+  if (existingSession.success && existingSession.data) {
+    // 已有会话，更新页面信息
+    const pageInfo = getPageInfo()
+    await chrome.runtime.sendMessage({
+      type: 'UPDATE_SESSION',
+      payload: {
+        sessionId: existingSession.data.id,
+        updates: {
+          pageUrl: pageInfo.url,
+          pageTitle: pageInfo.title
+        }
+      }
+    })
+    return existingSession.data.id
+  }
+
+  // 没有会话，创建新会话
+  const pageInfo = getPageInfo()
+  const response = await chrome.runtime.sendMessage({
+    type: 'CREATE_SESSION',
+    payload: {
+      title: pageInfo.title || '新对话',
+      tabId,
+      pageUrl: pageInfo.url,
+      pageTitle: pageInfo.title
+    }
+  })
+
+  return response.data.id
 }
 
 function createChatFrame(sessionId: number) {
@@ -234,13 +294,31 @@ chrome.storage.local.get(['chatPinned', 'chatSessionId'], (result) => {
 // 监听来自popup或background的消息
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'OPEN_CHAT') {
-    currentSessionId = message.sessionId
-    if (chatContainer) {
-      chatFrame!.src = chrome.runtime.getURL(`chat.html?sessionId=${message.sessionId}`)
+    // 如果传入了 sessionId，使用传入的；否则自动获取或创建
+    if (message.sessionId) {
+      currentSessionId = message.sessionId
+      if (chatContainer) {
+        chatFrame!.src = chrome.runtime.getURL(`chat.html?sessionId=${message.sessionId}`)
+      } else {
+        createChatFrame(message.sessionId)
+      }
+      sendResponse({ success: true })
     } else {
-      createChatFrame(message.sessionId)
+      // 自动获取或创建当前标签页的会话
+      getOrCreateSessionForTab().then(sessionId => {
+        currentSessionId = sessionId
+        if (chatContainer) {
+          chatFrame!.src = chrome.runtime.getURL(`chat.html?sessionId=${sessionId}`)
+        } else {
+          createChatFrame(sessionId)
+        }
+        sendResponse({ success: true, sessionId })
+      }).catch(err => {
+        console.error('Failed to get/create session:', err)
+        sendResponse({ success: false, error: err.message })
+      })
+      return true // 异步响应
     }
-    sendResponse({ success: true })
   } else if (message.type === 'CLOSE_CHAT') {
     closeChat()
     sendResponse({ success: true })

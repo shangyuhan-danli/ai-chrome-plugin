@@ -87,6 +87,9 @@ export interface StreamMessage {
 export interface Session {
   id?: number
   title: string
+  tabId?: number
+  pageUrl?: string
+  pageTitle?: string
   createdAt: number
   updatedAt: number
   agentId?: string
@@ -116,6 +119,9 @@ export type MessageType =
   | 'GET_MESSAGES'
   | 'GET_SESSIONS'
   | 'CREATE_SESSION'
+  | 'GET_SESSION'
+  | 'GET_SESSION_BY_TAB'
+  | 'UPDATE_SESSION'
   | 'DELETE_SESSION'
   | 'SAVE_SETTING'
   | 'GET_SETTING'

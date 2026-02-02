@@ -1,7 +1,7 @@
 // IndexedDB 工具类
 export class ChatDB {
   private dbName = 'ai-chat-db'
-  private version = 1
+  private version = 2  // 升级版本以支持新字段
   private db: IDBDatabase | null = null
 
   async init(): Promise<void> {
@@ -16,11 +16,20 @@ export class ChatDB {
 
       request.onupgradeneeded = (event) => {
         const db = (event.target as IDBOpenDBRequest).result
+        const oldVersion = event.oldVersion
 
         // 创建聊天会话表
         if (!db.objectStoreNames.contains('sessions')) {
           const sessionStore = db.createObjectStore('sessions', { keyPath: 'id', autoIncrement: true })
           sessionStore.createIndex('createdAt', 'createdAt', { unique: false })
+          sessionStore.createIndex('tabId', 'tabId', { unique: false })
+        } else if (oldVersion < 2) {
+          // 升级：为现有 sessions 表添加 tabId 索引
+          const transaction = (event.target as IDBOpenDBRequest).transaction!
+          const sessionStore = transaction.objectStore('sessions')
+          if (!sessionStore.indexNames.contains('tabId')) {
+            sessionStore.createIndex('tabId', 'tabId', { unique: false })
+          }
         }
 
         // 创建消息表
@@ -38,20 +47,91 @@ export class ChatDB {
     })
   }
 
-  async addSession(title: string): Promise<number> {
+  async addSession(
+    title: string,
+    tabId?: number,
+    pageUrl?: string,
+    pageTitle?: string
+  ): Promise<number> {
     const session = {
       title,
+      tabId: tabId || null,
+      pageUrl: pageUrl || '',
+      pageTitle: pageTitle || '',
       createdAt: Date.now(),
       updatedAt: Date.now()
     }
     return this.add('sessions', session)
   }
 
-  async addMessage(sessionId: number, role: 'user' | 'assistant', content: string): Promise<number> {
+  async updateSession(sessionId: number, updates: Partial<{
+    title: string
+    tabId: number
+    pageUrl: string
+    pageTitle: string
+    updatedAt: number
+  }>): Promise<void> {
+    if (!this.db) await this.init()
+    return new Promise((resolve, reject) => {
+      const transaction = this.db!.transaction(['sessions'], 'readwrite')
+      const store = transaction.objectStore('sessions')
+      const getRequest = store.get(sessionId)
+
+      getRequest.onsuccess = () => {
+        const session = getRequest.result
+        if (session) {
+          const updatedSession = {
+            ...session,
+            ...updates,
+            updatedAt: Date.now()
+          }
+          store.put(updatedSession)
+        }
+      }
+
+      transaction.oncomplete = () => resolve()
+      transaction.onerror = () => reject(transaction.error)
+    })
+  }
+
+  async getSessionByTabId(tabId: number): Promise<any | null> {
+    if (!this.db) await this.init()
+    return new Promise((resolve, reject) => {
+      const transaction = this.db!.transaction(['sessions'], 'readonly')
+      const store = transaction.objectStore('sessions')
+      const index = store.index('tabId')
+      const request = index.get(tabId)
+
+      request.onsuccess = () => resolve(request.result || null)
+      request.onerror = () => reject(request.error)
+    })
+  }
+
+  async getSession(sessionId: number): Promise<any | null> {
+    if (!this.db) await this.init()
+    return new Promise((resolve, reject) => {
+      const transaction = this.db!.transaction(['sessions'], 'readonly')
+      const store = transaction.objectStore('sessions')
+      const request = store.get(sessionId)
+
+      request.onsuccess = () => resolve(request.result || null)
+      request.onerror = () => reject(request.error)
+    })
+  }
+
+  async addMessage(
+    sessionId: number,
+    role: 'user' | 'assistant',
+    content: string,
+    blocks?: any[],
+    think?: string
+  ): Promise<number> {
     const message = {
       sessionId,
       role,
       content,
+      blocks: blocks || [{ type: 'text', text: content }],
+      think: think || '',
       createdAt: Date.now()
     }
     return this.add('messages', message)

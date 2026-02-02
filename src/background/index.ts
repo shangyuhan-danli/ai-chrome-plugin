@@ -51,8 +51,20 @@ function getSessionUUID(localSessionId: number): string {
 // 监听流式会话的长连接
 chrome.runtime.onConnect.addListener((port) => {
   if (port.name === 'chat-stream') {
+    // 用于收集流式响应内容
+    let streamContent = ''
+    let streamThink = ''
+    let streamBlocks: ContentBlock[] = []
+    let currentSessionId: number | null = null
+
     port.onMessage.addListener(async (request) => {
       const { agentId, sessionId, message, model, userId, role, currentPageInfo, browserTools } = request
+      currentSessionId = sessionId
+
+      // 重置流式内容收集器
+      streamContent = ''
+      streamThink = ''
+      streamBlocks = []
 
       // 如果是用户消息，保存到本地
       if (role === 'user') {
@@ -84,11 +96,32 @@ chrome.runtime.onConnect.addListener((port) => {
       await apiService.chatStream(
         chatRequest,
         (data: StreamCallbackData) => {
+          // 收集流式内容
+          if (data.content) {
+            streamContent += data.content
+          }
+          if (data.think && data.think.reasoning_content) {
+            streamThink = data.think.reasoning_content
+          }
           // 发送流式数据到前端
           port.postMessage({ type: 'data', data })
         },
-        () => {
-          // 完成
+        async () => {
+          // 完成时保存 assistant 消息到本地数据库
+          if (currentSessionId !== null) {
+            // 构建 blocks
+            if (streamContent) {
+              streamBlocks.push({ type: 'text', text: streamContent })
+            }
+            // 保存 assistant 消息（包含完整的 blocks 和 think）
+            await chatDB.addMessage(
+              currentSessionId,
+              'assistant',
+              streamContent,
+              streamBlocks,
+              streamThink
+            )
+          }
           port.postMessage({ type: 'done' })
         },
         (error) => {
@@ -139,8 +172,25 @@ async function handleMessage(message: ChromeMessage, sender: chrome.runtime.Mess
         return { success: true, data: sessions }
 
       case 'CREATE_SESSION':
-        const newSessionId = await chatDB.addSession(payload.title || '新对话')
+        const newSessionId = await chatDB.addSession(
+          payload.title || '新对话',
+          payload.tabId,
+          payload.pageUrl,
+          payload.pageTitle
+        )
         return { success: true, data: { id: newSessionId } }
+
+      case 'GET_SESSION_BY_TAB':
+        const tabSession = await chatDB.getSessionByTabId(payload.tabId)
+        return { success: true, data: tabSession }
+
+      case 'GET_SESSION':
+        const session = await chatDB.getSession(payload.sessionId)
+        return { success: true, data: session }
+
+      case 'UPDATE_SESSION':
+        await chatDB.updateSession(payload.sessionId, payload.updates)
+        return { success: true }
 
       case 'DELETE_SESSION':
         await chatDB.deleteSession(payload.sessionId)

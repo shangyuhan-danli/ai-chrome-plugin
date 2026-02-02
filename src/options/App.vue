@@ -65,6 +65,64 @@
         </div>
       </div>
 
+      <!-- 历史会话模态框 -->
+      <div v-if="showSessionModal" class="modal-overlay" @click.self="closeSessionModal">
+        <div class="modal-container">
+          <div class="modal-header">
+            <h3>{{ currentViewSession?.title || '会话详情' }}</h3>
+            <button class="modal-close" @click="closeSessionModal">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                <line x1="18" y1="6" x2="6" y2="18" stroke-width="2" stroke-linecap="round"/>
+                <line x1="6" y1="6" x2="18" y2="18" stroke-width="2" stroke-linecap="round"/>
+              </svg>
+            </button>
+          </div>
+          <div class="modal-body">
+            <div v-if="sessionMessages.length === 0" class="modal-empty">
+              暂无消息记录
+            </div>
+            <div v-else class="messages-list">
+              <div
+                v-for="msg in sessionMessages"
+                :key="msg.id || msg.createdAt"
+                :class="['message-item', msg.role]"
+              >
+                <div class="message-role">{{ msg.role === 'user' ? '用户' : 'AI' }}</div>
+                <div class="message-content">
+                  <!-- 思考过程 -->
+                  <div v-if="msg.think" class="think-block">
+                    <div class="think-header">
+                      <span class="think-icon">💭</span>
+                      <span class="think-label">思考过程</span>
+                    </div>
+                    <div class="think-content">{{ msg.think }}</div>
+                  </div>
+                  <!-- 消息内容块 -->
+                  <template v-if="msg.blocks && msg.blocks.length > 0">
+                    <template v-for="(block, index) in msg.blocks" :key="index">
+                      <div v-if="block.type === 'text'" class="text-block">{{ block.text }}</div>
+                      <div v-else-if="block.type === 'tool_use'" class="tool-block">
+                        <div class="tool-header">
+                          <span class="tool-icon">⚙</span>
+                          <span class="tool-name">{{ block.name }}</span>
+                          <span v-if="block.status" :class="['tool-badge', block.status]">
+                            {{ block.status === 'approved' ? '已批准' : block.status === 'rejected' ? '已拒绝' : '待处理' }}
+                          </span>
+                        </div>
+                        <pre class="tool-params">{{ JSON.stringify(block.input, null, 2) }}</pre>
+                      </div>
+                    </template>
+                  </template>
+                  <!-- 兼容旧格式：只有 content 字段 -->
+                  <div v-else-if="msg.content" class="text-block">{{ msg.content }}</div>
+                </div>
+                <div class="message-time">{{ formatDate(msg.createdAt) }}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- API设置 -->
       <div v-if="activeTab === 'api'" class="content-section">
         <div class="section-header">
@@ -256,6 +314,11 @@ const tabs = [
 const sessions = ref<any[]>([])
 const totalMessages = ref(0)
 
+// 模态框相关状态
+const showSessionModal = ref(false)
+const currentViewSession = ref<any>(null)
+const sessionMessages = ref<any[]>([])
+
 const apiSettings = ref({
   endpoint: '',
   apiKey: '',
@@ -367,8 +430,34 @@ const loadSettings = async () => {
 }
 
 const viewSession = async (sessionId: number) => {
-  // 可以实现查看会话详情的功能
-  alert(`查看会话 ${sessionId} 的功能待实现`)
+  try {
+    // 找到当前会话信息
+    currentViewSession.value = sessions.value.find(s => s.id === sessionId)
+
+    // 获取会话消息
+    const response = await chrome.runtime.sendMessage({
+      type: 'GET_MESSAGES',
+      payload: { sessionId }
+    })
+
+    if (response?.success) {
+      sessionMessages.value = response.data || []
+    } else {
+      sessionMessages.value = []
+    }
+
+    // 显示模态框
+    showSessionModal.value = true
+  } catch (error) {
+    console.error('加载会话消息失败:', error)
+    alert('加载会话消息失败')
+  }
+}
+
+const closeSessionModal = () => {
+  showSessionModal.value = false
+  currentViewSession.value = null
+  sessionMessages.value = []
 }
 
 const deleteSession = async (sessionId: number) => {
@@ -446,6 +535,7 @@ const formatDate = (timestamp: number) => {
 </script>
 
 <style scoped>
+
 * {
   margin: 0;
   padding: 0;
@@ -455,22 +545,22 @@ const formatDate = (timestamp: number) => {
 .options-container {
   display: flex;
   min-height: 100vh;
-  background: #f9fafb;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: var(--bg-secondary);
+  font-family: var(--font-sans);
 }
 
 .sidebar {
   width: 260px;
-  background: linear-gradient(180deg, #667eea 0%, #764ba2 100%);
-  color: white;
-  padding: 32px 0;
+  background: var(--gradient-primary);
+  color: var(--text-inverse);
+  padding: var(--space-8) 0;
   position: fixed;
   height: 100vh;
   overflow-y: auto;
 }
 
 .sidebar-header {
-  padding: 0 24px 32px;
+  padding: 0 var(--space-6) var(--space-8);
   border-bottom: 1px solid rgba(255, 255, 255, 0.2);
 }
 
@@ -478,11 +568,11 @@ const formatDate = (timestamp: number) => {
   width: 56px;
   height: 56px;
   background: rgba(255, 255, 255, 0.2);
-  border-radius: 14px;
+  border-radius: var(--radius-xl);
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-bottom: 16px;
+  margin-bottom: var(--space-4);
 }
 
 .logo svg {
@@ -492,34 +582,35 @@ const formatDate = (timestamp: number) => {
 }
 
 .sidebar-header h1 {
-  font-size: 20px;
+  font-size: var(--text-xl);
   font-weight: 600;
-  margin-bottom: 4px;
+  margin-bottom: var(--space-1);
 }
 
 .sidebar-header p {
-  font-size: 13px;
+  font-size: var(--text-base);
   opacity: 0.9;
 }
 
 .sidebar-nav {
-  padding: 24px 0;
+  padding: var(--space-6) 0;
 }
 
 .nav-item {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 12px 24px;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-6);
   color: rgba(255, 255, 255, 0.8);
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all var(--transition-base);
   border-left: 3px solid transparent;
 }
 
 .nav-item:hover {
   background: rgba(255, 255, 255, 0.1);
   color: white;
+  padding-left: calc(var(--space-6) + 2px);
 }
 
 .nav-item.active {
@@ -538,48 +629,60 @@ const formatDate = (timestamp: number) => {
 .main-content {
   margin-left: 260px;
   flex: 1;
-  padding: 40px;
+  padding: var(--space-10);
 }
 
 .content-section {
-  background: white;
-  border-radius: 16px;
-  padding: 32px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  background: var(--surface-primary);
+  border-radius: var(--radius-xl);
+  padding: var(--space-8);
+  box-shadow: var(--shadow-sm);
+  transition: all var(--transition-base);
+}
+
+.content-section:hover {
+  box-shadow: var(--shadow-md);
 }
 
 .section-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 32px;
-  padding-bottom: 20px;
-  border-bottom: 2px solid #f3f4f6;
+  margin-bottom: var(--space-8);
+  padding-bottom: var(--space-5);
+  border-bottom: 2px solid var(--border-primary);
 }
 
 .section-header h2 {
-  font-size: 24px;
-  color: #1f2937;
+  font-size: var(--text-2xl);
+  color: var(--text-primary);
 }
 
 .btn-primary {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 10px 20px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  gap: var(--space-2);
+  padding: 10px var(--space-5);
+  background: var(--gradient-primary);
   color: white;
   border: none;
-  border-radius: 8px;
-  font-size: 14px;
+  border-radius: var(--radius-lg);
+  font-size: var(--text-md);
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all var(--transition-base);
+  box-shadow: var(--shadow-sm);
+  position: relative;
+  overflow: hidden;
 }
 
 .btn-primary:hover {
   transform: translateY(-2px);
-  box-shadow: 0 8px 16px rgba(102, 126, 234, 0.3);
+  box-shadow: var(--shadow-glow);
+}
+
+.btn-primary:active {
+  transform: translateY(0);
 }
 
 .btn-primary svg {
@@ -589,19 +692,19 @@ const formatDate = (timestamp: number) => {
 }
 
 .btn-secondary {
-  padding: 10px 20px;
-  background: #f3f4f6;
-  color: #374151;
+  padding: 10px var(--space-5);
+  background: var(--surface-secondary);
+  color: var(--text-secondary);
   border: none;
-  border-radius: 8px;
-  font-size: 14px;
+  border-radius: var(--radius-lg);
+  font-size: var(--text-md);
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all var(--transition-base);
 }
 
 .btn-secondary:hover {
-  background: #e5e7eb;
+  background: var(--bg-hover);
 }
 
 .sessions-list {
@@ -613,33 +716,34 @@ const formatDate = (timestamp: number) => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 20px;
-  background: #f9fafb;
-  border-radius: 12px;
-  border: 1px solid #e5e7eb;
-  transition: all 0.2s;
+  padding: var(--space-5);
+  background: var(--surface-secondary);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-primary);
+  transition: all var(--transition-base);
 }
 
 .session-card:hover {
-  border-color: #667eea;
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.1);
+  border-color: var(--primary-500);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-2px);
 }
 
 .session-info h3 {
-  font-size: 16px;
-  color: #1f2937;
-  margin-bottom: 8px;
+  font-size: var(--text-lg);
+  color: var(--text-primary);
+  margin-bottom: var(--space-2);
 }
 
 .session-info p {
-  font-size: 13px;
-  color: #6b7280;
-  margin-bottom: 4px;
+  font-size: var(--text-base);
+  color: var(--text-tertiary);
+  margin-bottom: var(--space-1);
 }
 
 .session-actions {
   display: flex;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .btn-icon {
@@ -648,40 +752,46 @@ const formatDate = (timestamp: number) => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: white;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
+  background: var(--surface-primary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all var(--transition-base);
 }
 
 .btn-icon:hover {
-  border-color: #667eea;
-  background: #f9fafb;
+  border-color: var(--primary-500);
+  background: var(--bg-hover);
+  transform: translateY(-1px);
 }
 
 .btn-icon svg {
   width: 18px;
   height: 18px;
-  stroke: #6b7280;
+  stroke: var(--text-tertiary);
+  transition: stroke var(--transition-base);
+}
+
+.btn-icon:hover svg {
+  stroke: var(--primary-500);
 }
 
 .empty-state {
   text-align: center;
-  padding: 60px 20px;
+  padding: var(--space-10) var(--space-5);
 }
 
 .empty-state svg {
   width: 64px;
   height: 64px;
-  stroke: #d1d5db;
-  margin-bottom: 16px;
+  stroke: var(--border-secondary);
+  margin-bottom: var(--space-4);
 }
 
 .empty-state p {
-  font-size: 16px;
-  color: #6b7280;
-  margin-bottom: 20px;
+  font-size: var(--text-lg);
+  color: var(--text-tertiary);
+  margin-bottom: var(--space-5);
 }
 
 .form-section {
@@ -689,57 +799,66 @@ const formatDate = (timestamp: number) => {
 }
 
 .form-group {
-  margin-bottom: 24px;
+  margin-bottom: var(--space-6);
 }
 
 .form-group label {
   display: block;
-  font-size: 14px;
+  font-size: var(--text-md);
   font-weight: 600;
-  color: #374151;
-  margin-bottom: 8px;
+  color: var(--text-secondary);
+  margin-bottom: var(--space-2);
 }
 
 .form-input,
 .form-select {
   width: 100%;
-  padding: 12px 16px;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  font-size: 14px;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--input-border);
+  border-radius: var(--radius-lg);
+  font-size: var(--text-md);
   font-family: inherit;
-  transition: all 0.2s;
+  background: var(--input-bg);
+  color: var(--text-primary);
+  transition: all var(--transition-base);
 }
 
 .form-input:focus,
 .form-select:focus {
   outline: none;
-  border-color: #667eea;
+  border-color: var(--input-focus);
   box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
 }
 
 .form-hint {
-  font-size: 12px;
-  color: #6b7280;
-  margin-top: 6px;
+  font-size: var(--text-sm);
+  color: var(--text-tertiary);
+  margin-top: var(--space-1);
 }
 
 .form-actions {
   display: flex;
-  gap: 12px;
-  margin-top: 32px;
+  gap: var(--space-3);
+  margin-top: var(--space-8);
 }
 
 .radio-group {
   display: flex;
-  gap: 16px;
+  gap: var(--space-4);
 }
 
 .radio-option {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
   cursor: pointer;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  transition: background var(--transition-base);
+}
+
+.radio-option:hover {
+  background: var(--bg-hover);
 }
 
 .radio-option input[type="radio"] {
@@ -749,9 +868,16 @@ const formatDate = (timestamp: number) => {
 .checkbox-label {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--space-2);
   cursor: pointer;
   font-weight: normal;
+  padding: var(--space-2);
+  border-radius: var(--radius-md);
+  transition: background var(--transition-base);
+}
+
+.checkbox-label:hover {
+  background: var(--bg-hover);
 }
 
 .checkbox-label input[type="checkbox"] {
@@ -761,22 +887,23 @@ const formatDate = (timestamp: number) => {
 }
 
 .alert {
-  padding: 12px 16px;
-  border-radius: 8px;
-  margin-top: 16px;
-  font-size: 14px;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-lg);
+  margin-top: var(--space-4);
+  font-size: var(--text-md);
+  animation: fadeInUp var(--transition-base) ease-out;
 }
 
 .alert-success {
-  background: #d1fae5;
-  color: #065f46;
-  border: 1px solid #6ee7b7;
+  background: rgba(16, 185, 129, 0.1);
+  color: var(--success-600);
+  border: 1px solid rgba(16, 185, 129, 0.2);
 }
 
 .alert-error {
-  background: #fee2e2;
-  color: #991b1b;
-  border: 1px solid #fca5a5;
+  background: rgba(239, 68, 68, 0.1);
+  color: var(--error-600);
+  border: 1px solid rgba(239, 68, 68, 0.2);
 }
 
 .about-content {
@@ -788,12 +915,13 @@ const formatDate = (timestamp: number) => {
 .about-logo {
   width: 80px;
   height: 80px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  border-radius: 20px;
+  background: var(--gradient-primary);
+  border-radius: var(--radius-xl);
   display: flex;
   align-items: center;
   justify-content: center;
-  margin: 0 auto 24px;
+  margin: 0 auto var(--space-6);
+  box-shadow: var(--shadow-md);
 }
 
 .about-logo svg {
@@ -803,67 +931,332 @@ const formatDate = (timestamp: number) => {
 }
 
 .about-content h3 {
-  font-size: 28px;
-  color: #1f2937;
-  margin-bottom: 8px;
+  font-size: var(--text-2xl);
+  color: var(--text-primary);
+  margin-bottom: var(--space-2);
 }
 
 .version {
-  font-size: 14px;
-  color: #6b7280;
-  margin-bottom: 20px;
+  font-size: var(--text-md);
+  color: var(--text-tertiary);
+  margin-bottom: var(--space-5);
 }
 
 .description {
   font-size: 15px;
-  color: #4b5563;
+  color: var(--text-secondary);
   line-height: 1.6;
-  margin-bottom: 32px;
+  margin-bottom: var(--space-8);
 }
 
 .about-stats {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 20px;
-  margin-bottom: 32px;
+  gap: var(--space-5);
+  margin-bottom: var(--space-8);
 }
 
 .stat-card {
-  padding: 24px;
-  background: linear-gradient(135deg, #f6f8fb 0%, #f1f3f9 100%);
-  border-radius: 12px;
+  padding: var(--space-6);
+  background: var(--surface-secondary);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-primary);
+  transition: all var(--transition-base);
+}
+
+.stat-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+  border-color: var(--primary-500);
 }
 
 .stat-value {
   font-size: 36px;
   font-weight: 700;
-  color: #667eea;
-  margin-bottom: 8px;
+  color: var(--primary-500);
+  margin-bottom: var(--space-2);
 }
 
 .stat-label {
-  font-size: 14px;
-  color: #6b7280;
+  font-size: var(--text-md);
+  color: var(--text-tertiary);
 }
 
 .about-links {
   display: flex;
   justify-content: center;
-  gap: 16px;
+  gap: var(--space-4);
 }
 
 .link-btn {
-  padding: 10px 20px;
-  background: #f3f4f6;
-  color: #374151;
+  padding: 10px var(--space-5);
+  background: var(--surface-secondary);
+  color: var(--text-secondary);
   text-decoration: none;
-  border-radius: 8px;
-  font-size: 14px;
+  border-radius: var(--radius-lg);
+  font-size: var(--text-md);
   font-weight: 500;
-  transition: all 0.2s;
+  transition: all var(--transition-base);
+  border: 1px solid var(--border-primary);
 }
 
 .link-btn:hover {
-  background: #e5e7eb;
+  background: var(--bg-hover);
+  border-color: var(--primary-500);
+  color: var(--primary-500);
+  transform: translateY(-1px);
 }
+
+/* 模态框样式 */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  animation: fadeIn 0.2s ease-out;
+}
+
+.modal-container {
+  background: var(--surface-primary);
+  border-radius: var(--radius-xl);
+  width: 90%;
+  max-width: 800px;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: var(--shadow-lg);
+  animation: slideUp 0.3s ease-out;
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--space-5) var(--space-6);
+  border-bottom: 1px solid var(--border-primary);
+  background: var(--gradient-primary);
+  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+}
+
+.modal-header h3 {
+  margin: 0;
+  font-size: var(--text-lg);
+  color: white;
+  font-weight: 600;
+}
+
+.modal-close {
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--transition-base);
+}
+
+.modal-close:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.modal-close svg {
+  width: 18px;
+  height: 18px;
+  stroke: white;
+}
+
+.modal-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-5);
+}
+
+.modal-empty {
+  text-align: center;
+  padding: var(--space-10);
+  color: var(--text-tertiary);
+  font-size: var(--text-md);
+}
+
+.messages-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.message-item {
+  padding: var(--space-4);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-primary);
+  transition: all var(--transition-base);
+}
+
+.message-item:hover {
+  box-shadow: var(--shadow-sm);
+}
+
+.message-item.user {
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.05) 0%, rgba(118, 75, 162, 0.05) 100%);
+  border-color: rgba(102, 126, 234, 0.2);
+}
+
+.message-item.assistant {
+  background: var(--surface-secondary);
+}
+
+.message-role {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--primary-500);
+  margin-bottom: var(--space-2);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.message-item.assistant .message-role {
+  color: var(--success-600);
+}
+
+.message-content {
+  font-size: var(--text-md);
+  color: var(--text-primary);
+  line-height: 1.6;
+}
+
+.message-time {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  margin-top: var(--space-2);
+  text-align: right;
+}
+
+.text-block {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* 模态框中的思考块 */
+.modal-body .think-block {
+  background: var(--think-bg, #f0f7ff);
+  border: 1px solid var(--think-border, #91caff);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.modal-body .think-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.modal-body .think-icon {
+  font-size: var(--text-md);
+}
+
+.modal-body .think-label {
+  font-weight: 600;
+  color: var(--primary-500);
+  font-size: var(--text-sm);
+}
+
+.modal-body .think-content {
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+/* 模态框中的工具块 */
+.modal-body .tool-block {
+  background: var(--tool-bg, #fff8e6);
+  border: 1px solid var(--tool-border, #ffe58f);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+  margin-top: var(--space-2);
+}
+
+.modal-body .tool-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.modal-body .tool-icon {
+  color: var(--warning-500);
+}
+
+.modal-body .tool-name {
+  font-weight: 600;
+  color: var(--tool-text, #d48806);
+  font-size: var(--text-sm);
+}
+
+.modal-body .tool-badge {
+  margin-left: auto;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+  font-weight: 600;
+}
+
+.modal-body .tool-badge.approved {
+  background: var(--success-500);
+  color: white;
+}
+
+.modal-body .tool-badge.rejected {
+  background: var(--error-500);
+  color: white;
+}
+
+.modal-body .tool-badge.pending {
+  background: var(--warning-500);
+  color: white;
+}
+
+.modal-body .tool-params {
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: var(--radius-sm);
+  padding: var(--space-2);
+  margin: 0;
+  font-size: var(--text-xs);
+  font-family: var(--font-mono);
+  white-space: pre-wrap;
+  word-break: break-all;
+  overflow-x: auto;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+</style>
+
+<!-- 全局CSS变量 - 非scoped以确保全局可用 -->
+<style>
+@import '../styles/variables.css';
+@import '../styles/animations.css';
 </style>

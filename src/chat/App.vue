@@ -17,6 +17,57 @@
           </div>
         </div>
         <div class="header-right">
+          <!-- 会话选择器 -->
+          <div class="session-selector" @click.stop="toggleSessionDropdown">
+            <button class="icon-btn" :class="{ active: showSessionDropdown }" title="切换会话">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
+            <!-- 会话下拉列表 -->
+            <div v-if="showSessionDropdown" class="session-dropdown-menu">
+              <div class="session-dropdown-header">
+                <span>历史会话</span>
+                <button class="session-new-btn" @click.stop="createNewSession">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                    <line x1="12" y1="5" x2="12" y2="19" stroke-width="2" stroke-linecap="round"/>
+                    <line x1="5" y1="12" x2="19" y2="12" stroke-width="2" stroke-linecap="round"/>
+                  </svg>
+                  新建
+                </button>
+              </div>
+              <div class="session-dropdown-list">
+                <div v-if="sessionsLoading" class="session-dropdown-loading">
+                  <div class="loading-spinner"></div>
+                  <span>加载中...</span>
+                </div>
+                <div v-else-if="sessions.length === 0" class="session-dropdown-empty">
+                  暂无历史会话
+                </div>
+                <div
+                  v-else
+                  v-for="session in sessions"
+                  :key="session.id"
+                  class="session-dropdown-item"
+                  :class="{ selected: currentSessionId === session.id }"
+                  @click.stop="switchSession(session)"
+                >
+                  <div class="session-dropdown-info">
+                    <div class="session-dropdown-title">{{ session.title || session.pageTitle || '未命名会话' }}</div>
+                    <div class="session-dropdown-meta">
+                      <span v-if="session.pageUrl" class="session-url">{{ getDomain(session.pageUrl) }}</span>
+                      <span class="session-time">{{ formatSessionTime(session.updatedAt) }}</span>
+                    </div>
+                  </div>
+                  <div v-if="currentSessionId === session.id" class="session-check">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                      <polyline points="20 6 9 17 4 12" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
           <button class="icon-btn" @click="createNewSession" title="新建会话">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
               <line x1="12" y1="5" x2="12" y2="19" stroke-width="2" stroke-linecap="round"/>
@@ -61,10 +112,11 @@
       </div>
 
       <!-- 消息列表 -->
-      <div v-for="msg in streamMessages" :key="msg.id || msg.createdAt" :class="['message', msg.role]">
+      <div v-for="msg in streamMessages" :key="msg.id || msg.createdAt" :class="['message', msg.role, 'message-in']">
         <!-- 用户消息 -->
         <template v-if="msg.role === 'user'">
           <div class="message-box user-box">{{ getMessageText(msg) }}</div>
+          <span class="message-time">{{ formatTime(msg.createdAt) }}</span>
         </template>
 
         <!-- AI 消息 -->
@@ -102,6 +154,7 @@
               </div>
             </template>
           </div>
+          <span class="message-time">{{ formatTime(msg.createdAt) }}</span>
         </template>
       </div>
 
@@ -114,6 +167,36 @@
         </div>
       </div>
     </div>
+
+      <!-- Token 使用统计栏 -->
+      <div v-if="tokenUsage.total > 0 || isStreaming" class="token-stats-bar">
+        <div class="token-stats-content">
+          <div class="token-stats-left">
+            <span class="token-label">Token 消耗</span>
+            <span class="token-value">{{ formatNumber(tokenUsage.total) }}</span>
+          </div>
+          <div class="token-stats-detail">
+            <div class="token-item">
+              <span class="token-item-label">输入</span>
+              <span class="token-item-value prompt">{{ formatNumber(tokenUsage.prompt) }}</span>
+            </div>
+            <div class="token-item">
+              <span class="token-item-label">输出</span>
+              <span class="token-item-value completion">{{ formatNumber(tokenUsage.completion) }}</span>
+            </div>
+          </div>
+        </div>
+        <div class="token-progress-bar">
+          <div
+            class="token-progress-prompt"
+            :style="{ width: tokenProgressPrompt + '%' }"
+          ></div>
+          <div
+            class="token-progress-completion"
+            :style="{ width: tokenProgressCompletion + '%' }"
+          ></div>
+        </div>
+      </div>
 
       <div class="chat-input-area">
         <!-- Agent 选择器 -->
@@ -237,6 +320,40 @@ const recommendedAgentId = ref<string | null>(null)
 const currentPageUrl = ref('')
 const currentPageTitle = ref('')
 
+// 会话选择器相关状态
+const sessions = ref<any[]>([])
+const showSessionDropdown = ref(false)
+const sessionsLoading = ref(false)
+
+// Token 使用统计
+const tokenUsage = ref({
+  total: 0,
+  prompt: 0,
+  completion: 0
+})
+
+// Token 进度条计算
+const tokenProgressPrompt = computed(() => {
+  if (tokenUsage.value.total === 0) return 0
+  return (tokenUsage.value.prompt / tokenUsage.value.total) * 100
+})
+
+const tokenProgressCompletion = computed(() => {
+  if (tokenUsage.value.total === 0) return 0
+  return (tokenUsage.value.completion / tokenUsage.value.total) * 100
+})
+
+// 格式化数字
+const formatNumber = (num: number): string => {
+  if (num >= 1000000) {
+    return (num / 1000000).toFixed(1) + 'M'
+  }
+  if (num >= 1000) {
+    return (num / 1000).toFixed(1) + 'K'
+  }
+  return num.toString()
+}
+
 // 当前使用的模型
 const currentModel = ref('gpt-3.5-turbo')
 
@@ -309,6 +426,9 @@ onMounted(async () => {
     if (!target.closest('.agent-selector')) {
       showAgentDropdown.value = false
     }
+    if (!target.closest('.session-selector')) {
+      showSessionDropdown.value = false
+    }
   })
 })
 
@@ -376,6 +496,68 @@ const toggleAgentDropdown = () => {
 const selectAgent = (agent: Agent) => {
   selectedAgent.value = agent
   showAgentDropdown.value = false
+}
+
+// 切换会话下拉框
+const toggleSessionDropdown = async () => {
+  showSessionDropdown.value = !showSessionDropdown.value
+  if (showSessionDropdown.value) {
+    await loadSessions()
+  }
+}
+
+// 加载会话列表
+const loadSessions = async () => {
+  sessionsLoading.value = true
+  try {
+    const response = await chrome.runtime.sendMessage({
+      type: 'GET_SESSIONS'
+    })
+    if (response.success) {
+      // 按更新时间倒序排列
+      sessions.value = (response.data || []).sort((a: any, b: any) => b.updatedAt - a.updatedAt)
+    }
+  } catch (error) {
+    console.error('加载会话列表失败:', error)
+  } finally {
+    sessionsLoading.value = false
+  }
+}
+
+// 切换会话
+const switchSession = async (session: any) => {
+  currentSessionId.value = session.id
+  showSessionDropdown.value = false
+  // 更新页面信息
+  if (session.pageUrl) currentPageUrl.value = session.pageUrl
+  if (session.pageTitle) currentPageTitle.value = session.pageTitle
+  // 加载该会话的消息
+  await loadMessages()
+}
+
+// 获取域名
+const getDomain = (url: string): string => {
+  try {
+    const urlObj = new URL(url)
+    return urlObj.hostname
+  } catch {
+    return url
+  }
+}
+
+// 格式化会话时间
+const formatSessionTime = (timestamp: number): string => {
+  const now = Date.now()
+  const diff = now - timestamp
+  const minutes = Math.floor(diff / 60000)
+  const hours = Math.floor(diff / 3600000)
+  const days = Math.floor(diff / 86400000)
+
+  if (minutes < 1) return '刚刚'
+  if (minutes < 60) return `${minutes}分钟前`
+  if (hours < 24) return `${hours}小时前`
+  if (days < 7) return `${days}天前`
+  return new Date(timestamp).toLocaleDateString('zh-CN')
 }
 
 const loadMessages = async () => {
@@ -495,6 +677,14 @@ const sendBrowserToolResultAsUser = async (toolName: string, result: string, res
             }
           } catch (e) {
             console.error('解析工具参数失败:', e)
+          }
+        }
+
+        if (data.statistic && data.statistic.token_usage) {
+          tokenUsage.value = {
+            total: data.statistic.token_usage.total_tokens || 0,
+            prompt: data.statistic.token_usage.prompt_tokens || 0,
+            completion: data.statistic.token_usage.completion_tokens || 0
           }
         }
       } else if (msg.type === 'done') {
@@ -629,8 +819,12 @@ const sendStreamMessage = async (content: string) => {
         }
 
         // 处理统计信息
-        if (data.statistic) {
-          console.log('Token 使用统计:', data.statistic.token_usage)
+        if (data.statistic && data.statistic.token_usage) {
+          tokenUsage.value = {
+            total: data.statistic.token_usage.total_tokens || 0,
+            prompt: data.statistic.token_usage.prompt_tokens || 0,
+            completion: data.statistic.token_usage.completion_tokens || 0
+          }
         }
       } else if (msg.type === 'done') {
         // 流式传输完成 - 用 think 和 tool_call 替换原始 content 显示
@@ -823,8 +1017,12 @@ const handleNonBrowserToolApproved = async (toolId: string) => {
           }
         }
 
-        if (data.statistic) {
-          console.log('Token 使用统计:', data.statistic.token_usage)
+        if (data.statistic && data.statistic.token_usage) {
+          tokenUsage.value = {
+            total: data.statistic.token_usage.total_tokens || 0,
+            prompt: data.statistic.token_usage.prompt_tokens || 0,
+            completion: data.statistic.token_usage.completion_tokens || 0
+          }
         }
       } else if (msg.type === 'done') {
         isStreaming.value = false
@@ -936,28 +1134,49 @@ const openSettings = () => {
 
 // 新建会话
 const createNewSession = async () => {
-  // 生成新的 sessionId
-  currentSessionId.value = Date.now()
-  // 清空当前消息
-  streamMessages.value = []
-  // 重置流式状态
-  streamingContent.value = ''
-  isStreaming.value = false
-  isLoading.value = false
-  // 聚焦输入框
-  nextTick(() => {
-    inputArea.value?.focus()
-  })
+  try {
+    // 获取当前页面信息
+    const pageUrl = currentPageUrl.value
+    const pageTitle = currentPageTitle.value || '新对话'
+
+    // 创建新会话
+    const response = await chrome.runtime.sendMessage({
+      type: 'CREATE_SESSION',
+      payload: {
+        title: pageTitle,
+        pageUrl,
+        pageTitle
+      }
+    })
+
+    if (response.success) {
+      currentSessionId.value = response.data.id
+      // 清空当前消息
+      streamMessages.value = []
+      // 重置流式状态
+      streamingContent.value = ''
+      isStreaming.value = false
+      isLoading.value = false
+      // 聚焦输入框
+      nextTick(() => {
+        inputArea.value?.focus()
+      })
+    }
+  } catch (error) {
+    console.error('创建新会话失败:', error)
+  }
 }
 </script>
 
 <style scoped>
+
 /* 整体布局 */
 .chat-wrapper {
   display: flex;
   height: 100vh;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-family: var(--font-sans);
   position: relative;
+  background: var(--bg-primary);
 }
 
 .chat-container {
@@ -965,17 +1184,18 @@ const createNewSession = async () => {
   flex-direction: column;
   flex: 1;
   height: 100vh;
-  background: white;
+  background: var(--bg-primary);
 }
 
 .chat-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 12px 16px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
+  padding: var(--space-3) var(--space-4);
+  background: var(--gradient-primary);
+  color: var(--text-inverse);
   user-select: none;
+  box-shadow: var(--shadow-md);
 }
 
 .header-left {
@@ -1057,16 +1277,45 @@ const createNewSession = async () => {
   height: 28px;
   border: none;
   background: rgba(255, 255, 255, 0.2);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background 0.2s;
+  transition: all var(--transition-base);
+  position: relative;
+  overflow: hidden;
+}
+
+.icon-btn::after {
+  content: '';
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  background-image: radial-gradient(circle, rgba(255, 255, 255, 0.3) 10%, transparent 10.01%);
+  background-repeat: no-repeat;
+  background-position: 50%;
+  transform: scale(10, 10);
+  opacity: 0;
+  transition: transform 0.5s, opacity 1s;
 }
 
 .icon-btn:hover {
   background: rgba(255, 255, 255, 0.3);
+  transform: translateY(-1px);
+}
+
+.icon-btn:active {
+  transform: translateY(0);
+}
+
+.icon-btn:active::after {
+  transform: scale(0, 0);
+  opacity: 0.3;
+  transition: 0s;
 }
 
 .icon-btn.active {
@@ -1086,11 +1335,30 @@ const createNewSession = async () => {
 .chat-messages {
   flex: 1;
   overflow-y: auto;
-  padding: 16px;
+  padding: var(--space-4);
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  background: #fafafa;
+  gap: var(--space-3);
+  background: var(--bg-secondary);
+  scroll-behavior: smooth;
+}
+
+.chat-messages::-webkit-scrollbar {
+  width: 6px;
+}
+
+.chat-messages::-webkit-scrollbar-track {
+  background: var(--scrollbar-track);
+}
+
+.chat-messages::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: var(--radius-full);
+  transition: background var(--transition-base);
+}
+
+.chat-messages::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
 }
 
 .empty-state {
@@ -1098,8 +1366,8 @@ const createNewSession = async () => {
   align-items: center;
   justify-content: center;
   height: 100%;
-  color: #999;
-  font-size: 14px;
+  color: var(--text-muted);
+  font-size: var(--text-md);
 }
 
 .empty-state p {
@@ -1109,6 +1377,7 @@ const createNewSession = async () => {
 .message {
   display: flex;
   flex-direction: column;
+  transition: all var(--transition-base);
 }
 
 .message.user {
@@ -1119,65 +1388,92 @@ const createNewSession = async () => {
   align-items: flex-start;
 }
 
+.message-time {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  margin-top: var(--space-1);
+  opacity: 0;
+  transition: opacity var(--transition-base);
+}
+
+.message:hover .message-time {
+  opacity: 1;
+}
+
 .message-box {
   max-width: 85%;
-  padding: 10px 14px;
-  font-size: 14px;
+  padding: var(--space-3) var(--space-4);
+  font-size: var(--text-md);
   line-height: 1.5;
   word-wrap: break-word;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  transition: transform var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.message-box:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
 }
 
 .user-box {
-  background: #1a73e8;
-  color: #fff;
-  border-radius: 4px;
+  background: var(--user-bg);
+  color: var(--user-text);
+  border-bottom-right-radius: var(--radius-sm);
 }
 
 .assistant-box {
-  background: #fff;
-  color: #333;
-  border: 1px solid #e0e0e0;
-  border-radius: 4px;
+  background: var(--assistant-bg);
+  color: var(--assistant-text);
+  border: 1px solid var(--assistant-border);
+  border-bottom-left-radius: var(--radius-sm);
   display: flex;
   align-items: flex-start;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .assistant-content {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-2);
   max-width: 85%;
 }
 
 /* 思考块样式 */
 .think-block {
-  background: #f0f7ff;
-  border: 1px solid #91caff;
-  border-radius: 4px;
-  padding: 10px;
-  font-size: 12px;
-  margin-bottom: 4px;
+  background: var(--think-bg);
+  border: 1px solid var(--think-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+  font-size: var(--text-sm);
+  margin-bottom: var(--space-1);
+  transition: all var(--transition-base);
+}
+
+.think-block:hover {
+  box-shadow: var(--shadow-sm);
+  border-color: var(--primary-500);
 }
 
 .think-header {
   display: flex;
   align-items: center;
-  gap: 6px;
-  margin-bottom: 6px;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
 }
 
 .think-icon {
-  font-size: 14px;
+  font-size: var(--text-md);
+  animation: breathe 2s ease-in-out infinite;
 }
 
 .think-label {
-  font-weight: 500;
-  color: #1677ff;
+  font-weight: 600;
+  color: var(--think-text);
 }
 
 .think-content {
-  color: #4b5563;
+  color: var(--text-secondary);
   line-height: 1.5;
   white-space: pre-wrap;
   word-break: break-word;
@@ -1202,51 +1498,59 @@ const createNewSession = async () => {
 
 /* 工具块样式 */
 .tool-block {
-  background: #fffbeb;
-  border: 1px solid #fcd34d;
-  border-radius: 4px;
-  padding: 12px;
-  font-size: 13px;
+  background: var(--tool-bg);
+  border: 1px solid var(--tool-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+  font-size: var(--text-base);
+  transition: all var(--transition-base);
+}
+
+.tool-block:hover {
+  box-shadow: var(--shadow-sm);
+  border-color: var(--warning-500);
 }
 
 .tool-header {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 8px;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
 }
 
 .tool-name {
   font-weight: 600;
-  color: #b45309;
+  color: var(--tool-text);
 }
 
 .tool-badge {
   margin-left: auto;
-  padding: 2px 8px;
-  border-radius: 4px;
-  font-size: 11px;
-  font-weight: 500;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
 .tool-badge.approved {
-  background: #d1fae5;
-  color: #065f46;
+  background: var(--success-500);
+  color: white;
 }
 
 .tool-badge.rejected {
-  background: #fee2e2;
-  color: #991b1b;
+  background: var(--error-500);
+  color: white;
 }
 
 .tool-params {
-  background: #fef3c7;
-  border-radius: 4px;
-  padding: 8px 10px;
+  background: var(--tool-params-bg);
+  border-radius: var(--radius-sm);
+  padding: var(--space-2) var(--space-3);
   margin: 0;
-  font-size: 12px;
-  font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
-  color: #78350f;
+  font-size: var(--text-sm);
+  font-family: var(--font-mono);
+  color: var(--tool-text);
   white-space: pre-wrap;
   word-break: break-all;
   overflow-x: auto;
@@ -1254,51 +1558,81 @@ const createNewSession = async () => {
 
 .tool-actions {
   display: flex;
-  gap: 8px;
-  margin-top: 10px;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
   justify-content: flex-end;
 }
 
 .btn {
   padding: 6px 16px;
   border: none;
-  border-radius: 4px;
-  font-size: 13px;
-  font-weight: 500;
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  font-weight: 600;
   cursor: pointer;
-  transition: background 0.2s;
+  transition: all var(--transition-base);
+  position: relative;
+  overflow: hidden;
+}
+
+.btn::after {
+  content: '';
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  background-image: radial-gradient(circle, rgba(255, 255, 255, 0.4) 10%, transparent 10.01%);
+  background-repeat: no-repeat;
+  background-position: 50%;
+  transform: scale(10, 10);
+  opacity: 0;
+  transition: transform 0.5s, opacity 1s;
+}
+
+.btn:active {
+  transform: translateY(1px);
+}
+
+.btn:active::after {
+  transform: scale(0, 0);
+  opacity: 0.3;
+  transition: 0s;
 }
 
 .btn-approve {
-  background: #10b981;
+  background: var(--success-500);
   color: #fff;
 }
 
 .btn-approve:hover {
-  background: #059669;
+  background: var(--success-600);
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
 }
 
 .btn-reject {
-  background: #ef4444;
+  background: var(--error-500);
   color: #fff;
 }
 
 .btn-reject:hover {
-  background: #dc2626;
+  background: var(--error-600);
+  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
 }
 
 /* 打字动画 */
 .message-box.typing {
   display: flex;
-  gap: 4px;
-  padding: 12px 16px;
+  gap: var(--space-1);
+  padding: var(--space-3) var(--space-4);
 }
 
 .message-box.typing span {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: #9ca3af;
+  background: var(--text-muted);
   animation: typing 1.2s infinite;
 }
 
@@ -1310,83 +1644,94 @@ const createNewSession = async () => {
   animation-delay: 0.3s;
 }
 
-@keyframes typing {
-  0%, 60%, 100% {
-    transform: translateY(0);
-  }
-  30% {
-    transform: translateY(-6px);
-  }
-}
-
 .chat-input-area {
   display: flex;
-  gap: 8px;
-  padding: 12px 16px;
-  border-top: 1px solid #e5e7eb;
-  background: white;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-top: 1px solid var(--border-primary);
+  background: var(--surface-primary);
+  box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.05);
 }
 
 .chat-input-area textarea {
   flex: 1;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  padding: 10px 12px;
-  font-size: 14px;
+  border: 1px solid var(--input-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-3) var(--space-4);
+  font-size: var(--text-md);
   font-family: inherit;
   resize: none;
   outline: none;
   max-height: 120px;
+  background: var(--input-bg);
+  color: var(--text-primary);
+  transition: all var(--transition-base);
 }
 
 .chat-input-area textarea:focus {
-  border-color: #667eea;
+  border-color: var(--input-focus);
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
 }
 
 .send-btn {
   width: 40px;
   height: 40px;
   border: none;
-  background: #667eea;
-  border-radius: 8px;
+  background: var(--gradient-primary);
+  border-radius: var(--radius-lg);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background 0.2s;
+  transition: all var(--transition-base);
   flex-shrink: 0;
+  box-shadow: var(--shadow-sm);
+  position: relative;
+  overflow: hidden;
+}
+
+.send-btn::after {
+  content: '';
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  background-image: radial-gradient(circle, rgba(255, 255, 255, 0.4) 10%, transparent 10.01%);
+  background-repeat: no-repeat;
+  background-position: 50%;
+  transform: scale(10, 10);
+  opacity: 0;
+  transition: transform 0.5s, opacity 1s;
 }
 
 .send-btn:hover:not(:disabled) {
-  background: #5568d3;
+  background: var(--gradient-hover);
+  box-shadow: var(--shadow-glow);
+  transform: translateY(-2px);
+}
+
+.send-btn:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.send-btn:active::after {
+  transform: scale(0, 0);
+  opacity: 0.3;
+  transition: 0s;
 }
 
 .send-btn:disabled {
-  background: #d1d5db;
+  background: var(--border-primary);
   cursor: not-allowed;
+  opacity: 0.6;
 }
 
 .send-btn svg {
   width: 18px;
   height: 18px;
   stroke: white;
-}
-
-.chat-messages::-webkit-scrollbar {
-  width: 6px;
-}
-
-.chat-messages::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.chat-messages::-webkit-scrollbar-thumb {
-  background: #d1d5db;
-  border-radius: 3px;
-}
-
-.chat-messages::-webkit-scrollbar-thumb:hover {
-  background: #9ca3af;
 }
 
 /* Agent 选择器样式 */
@@ -1428,29 +1773,29 @@ const createNewSession = async () => {
 }
 
 .agent-name-text {
-  font-size: 13px;
+  font-size: var(--text-base);
   font-weight: 500;
-  color: #374151;
+  color: var(--text-secondary);
 }
 
 .match-badge {
-  font-size: 11px;
-  padding: 2px 6px;
-  background: #dcfce7;
-  color: #166534;
-  border-radius: 10px;
+  font-size: var(--text-xs);
+  padding: var(--space-1) var(--space-2);
+  background: rgba(16, 185, 129, 0.1);
+  color: var(--success-600);
+  border-radius: var(--radius-full);
 }
 
 .no-agent {
-  font-size: 13px;
-  color: #6b7280;
+  font-size: var(--text-base);
+  color: var(--text-tertiary);
 }
 
 .dropdown-arrow {
   width: 16px;
   height: 16px;
-  stroke: #6b7280;
-  transition: transform 0.2s;
+  stroke: var(--text-tertiary);
+  transition: transform var(--transition-base);
 }
 
 .dropdown-arrow.open {
@@ -1463,32 +1808,37 @@ const createNewSession = async () => {
   top: 100px;
   left: 0;
   right: 0;
-  background: white;
-  border-bottom: 1px solid #e5e7eb;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  background: var(--surface-primary);
+  border-bottom: 1px solid var(--border-primary);
+  box-shadow: var(--shadow-lg);
   z-index: 100;
   max-height: 300px;
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  border-radius: var(--radius-md);
 }
 
 .agent-search {
-  padding: 8px 12px;
-  border-bottom: 1px solid #e5e7eb;
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border-primary);
 }
 
 .agent-search input {
   width: 100%;
-  padding: 8px 12px;
-  border: 1px solid #e5e7eb;
-  border-radius: 6px;
-  font-size: 13px;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--input-border);
+  border-radius: var(--radius-md);
+  font-size: var(--text-base);
   outline: none;
+  background: var(--input-bg);
+  color: var(--text-primary);
+  transition: all var(--transition-base);
 }
 
 .agent-search input:focus {
-  border-color: #667eea;
+  border-color: var(--input-focus);
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
 }
 
 .agent-list {
@@ -1496,56 +1846,61 @@ const createNewSession = async () => {
   overflow-y: auto;
 }
 
+.agent-list::-webkit-scrollbar {
+  width: 4px;
+}
+
+.agent-list::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: var(--radius-full);
+}
+
 .agent-loading,
 .agent-empty {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  padding: 24px;
-  color: #6b7280;
-  font-size: 13px;
+  gap: var(--space-2);
+  padding: var(--space-6);
+  color: var(--text-tertiary);
+  font-size: var(--text-base);
 }
 
 .loading-spinner {
   width: 16px;
   height: 16px;
-  border: 2px solid #e5e7eb;
-  border-top-color: #667eea;
+  border: 2px solid var(--border-primary);
+  border-top-color: var(--primary-500);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
 }
 
 .agent-item {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 12px 16px;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
   cursor: pointer;
-  transition: background 0.2s;
+  transition: all var(--transition-base);
 }
 
 .agent-item:hover {
-  background: #f3f4f6;
+  background: var(--bg-hover);
 }
 
 .agent-item.selected {
-  background: #eff6ff;
+  background: rgba(102, 126, 234, 0.1);
 }
 
 .agent-item.recommended {
-  border-left: 3px solid #667eea;
+  border-left: 3px solid var(--primary-500);
 }
 
 .agent-avatar {
   width: 36px;
   height: 36px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: var(--gradient-primary);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1564,49 +1919,38 @@ const createNewSession = async () => {
 }
 
 .agent-name {
-  font-size: 14px;
+  font-size: var(--text-md);
   font-weight: 500;
-  color: #1f2937;
+  color: var(--text-primary);
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-2);
 }
 
 .recommended-tag {
-  font-size: 10px;
+  font-size: var(--text-xs);
   padding: 1px 5px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: var(--gradient-primary);
   color: white;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   font-weight: normal;
 }
 
 .agent-desc {
-  font-size: 12px;
-  color: #6b7280;
+  font-size: var(--text-sm);
+  color: var(--text-tertiary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .agent-score {
-  font-size: 12px;
+  font-size: var(--text-sm);
   font-weight: 500;
-  color: #059669;
-  background: #d1fae5;
-  padding: 2px 8px;
-  border-radius: 10px;
-}
-
-/* 流式响应时的光标效果 */
-.message.assistant .message-content.streaming::after {
-  content: '▋';
-  animation: blink 1s infinite;
-}
-
-@keyframes blink {
-  0%, 50% { opacity: 1; }
-  51%, 100% { opacity: 0; }
+  color: var(--success-600);
+  background: rgba(16, 185, 129, 0.1);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-full);
 }
 
 /* Agent 选择器 - 输入框旁边 */
@@ -1618,25 +1962,26 @@ const createNewSession = async () => {
 .agent-selector-btn {
   width: 40px;
   height: 40px;
-  border: 1px solid #e5e7eb;
-  background: #f8f9fa;
-  border-radius: 8px;
+  border: 1px solid var(--input-border);
+  background: var(--bg-secondary);
+  border-radius: var(--radius-lg);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.2s;
+  transition: all var(--transition-base);
   position: relative;
-  color: #6b7280;
+  color: var(--text-tertiary);
 }
 
 .agent-selector-btn:hover {
-  background: #f0f1f3;
-  border-color: #d1d5db;
+  background: var(--bg-hover);
+  border-color: var(--border-secondary);
+  transform: translateY(-1px);
 }
 
 .agent-selector-btn.active {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: var(--gradient-primary);
   border-color: transparent;
   color: white;
 }
@@ -1652,13 +1997,14 @@ const createNewSession = async () => {
   right: 4px;
   width: 8px;
   height: 8px;
-  background: #10b981;
+  background: var(--success-500);
   border-radius: 50%;
-  border: 2px solid #f8f9fa;
+  border: 2px solid var(--bg-secondary);
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
 .agent-selector-btn.active .agent-selected-indicator {
-  border-color: #667eea;
+  border-color: var(--primary-500);
 }
 
 /* Agent 下拉菜单 */
@@ -1676,22 +2022,26 @@ const createNewSession = async () => {
 }
 
 .agent-dropdown-header {
-  padding: 12px;
-  border-bottom: 1px solid #e5e7eb;
+  padding: var(--space-3);
+  border-bottom: 1px solid var(--border-primary);
 }
 
 .agent-dropdown-header input {
   width: 100%;
-  padding: 8px 12px;
-  border: 1px solid #e5e7eb;
-  border-radius: 6px;
-  font-size: 13px;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--input-border);
+  border-radius: var(--radius-md);
+  font-size: var(--text-base);
   outline: none;
   box-sizing: border-box;
+  background: var(--input-bg);
+  color: var(--text-primary);
+  transition: all var(--transition-base);
 }
 
 .agent-dropdown-header input:focus {
-  border-color: #667eea;
+  border-color: var(--input-focus);
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
 }
 
 .agent-dropdown-list {
@@ -1699,48 +2049,57 @@ const createNewSession = async () => {
   overflow-y: auto;
 }
 
+.agent-dropdown-list::-webkit-scrollbar {
+  width: 4px;
+}
+
+.agent-dropdown-list::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: var(--radius-full);
+}
+
 .agent-dropdown-loading,
 .agent-dropdown-empty {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  padding: 24px;
-  color: #6b7280;
-  font-size: 13px;
+  gap: var(--space-2);
+  padding: var(--space-6);
+  color: var(--text-tertiary);
+  font-size: var(--text-base);
 }
 
 .agent-dropdown-item {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 10px 12px;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
   cursor: pointer;
-  transition: background 0.2s;
+  transition: all var(--transition-base);
 }
 
 .agent-dropdown-item:hover {
-  background: #f3f4f6;
+  background: var(--bg-hover);
 }
 
 .agent-dropdown-item.selected {
-  background: #dbeafe;
+  background: rgba(102, 126, 234, 0.1);
 }
 
 .agent-dropdown-item.selected .agent-dropdown-name {
-  color: #1d4ed8;
+  color: var(--primary-600);
   font-weight: 600;
 }
 
 .agent-dropdown-item.recommended {
-  border-left: 3px solid #667eea;
+  border-left: 3px solid var(--primary-500);
 }
 
 .agent-dropdown-avatar {
   width: 32px;
   height: 32px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: var(--gradient-primary);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1759,17 +2118,17 @@ const createNewSession = async () => {
 }
 
 .agent-dropdown-name {
-  font-size: 13px;
+  font-size: var(--text-base);
   font-weight: 500;
-  color: #1f2937;
+  color: var(--text-primary);
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-2);
 }
 
 .agent-dropdown-desc {
-  font-size: 11px;
-  color: #6b7280;
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1779,12 +2138,250 @@ const createNewSession = async () => {
 .agent-check {
   width: 20px;
   height: 20px;
-  color: #667eea;
+  color: var(--primary-500);
 }
 
 .agent-check svg {
   width: 20px;
   height: 20px;
-  stroke: #667eea;
+  stroke: var(--primary-500);
 }
+
+/* 会话选择器样式 */
+.session-selector {
+  position: relative;
+}
+
+.session-dropdown-menu {
+  position: absolute;
+  top: 36px;
+  right: 0;
+  width: 320px;
+  background: var(--surface-primary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.15);
+  z-index: 1000;
+  overflow: hidden;
+}
+
+.session-dropdown-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border-primary);
+  background: var(--bg-secondary);
+}
+
+.session-dropdown-header span {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.session-new-btn {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  background: var(--gradient-primary);
+  color: white;
+  border: none;
+  border-radius: var(--radius-md);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition-base);
+}
+
+.session-new-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-sm);
+}
+
+.session-new-btn svg {
+  width: 12px;
+  height: 12px;
+  stroke: white;
+}
+
+.session-dropdown-list {
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.session-dropdown-list::-webkit-scrollbar {
+  width: 4px;
+}
+
+.session-dropdown-list::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: var(--radius-full);
+}
+
+.session-dropdown-loading,
+.session-dropdown-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-6);
+  color: var(--text-tertiary);
+  font-size: var(--text-sm);
+}
+
+.session-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  cursor: pointer;
+  transition: all var(--transition-base);
+  border-bottom: 1px solid var(--border-primary);
+}
+
+.session-dropdown-item:last-child {
+  border-bottom: none;
+}
+
+.session-dropdown-item:hover {
+  background: var(--bg-hover);
+}
+
+.session-dropdown-item.selected {
+  background: rgba(102, 126, 234, 0.1);
+}
+
+.session-dropdown-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.session-dropdown-title {
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-bottom: 2px;
+}
+
+.session-dropdown-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.session-url {
+  max-width: 120px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.session-time {
+  flex-shrink: 0;
+}
+
+.session-check {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+
+.session-check svg {
+  width: 18px;
+  height: 18px;
+  stroke: var(--primary-500);
+}
+
+/* Token 统计栏样式 */
+.token-stats-bar {
+  padding: var(--space-2) var(--space-4);
+  background: var(--surface-secondary);
+  border-top: 1px solid var(--border-primary);
+  font-size: var(--text-xs);
+}
+
+.token-stats-content {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--space-2);
+}
+
+.token-stats-left {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.token-label {
+  color: var(--text-tertiary);
+  font-weight: 500;
+}
+
+.token-value {
+  color: var(--text-primary);
+  font-weight: 600;
+  font-size: var(--text-sm);
+}
+
+.token-stats-detail {
+  display: flex;
+  gap: var(--space-4);
+}
+
+.token-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.token-item-label {
+  color: var(--text-muted);
+}
+
+.token-item-value {
+  font-weight: 600;
+  font-family: var(--font-mono);
+}
+
+.token-item-value.prompt {
+  color: var(--primary-500);
+}
+
+.token-item-value.completion {
+  color: var(--success-500);
+}
+
+.token-progress-bar {
+  height: 4px;
+  background: var(--border-primary);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+  display: flex;
+}
+
+.token-progress-prompt {
+  height: 100%;
+  background: var(--primary-500);
+  transition: width 0.3s ease;
+}
+
+.token-progress-completion {
+  height: 100%;
+  background: var(--success-500);
+  transition: width 0.3s ease;
+}
+</style>
+
+<!-- 全局CSS变量 - 非scoped以确保全局可用 -->
+<style>
+@import '../styles/variables.css';
+@import '../styles/animations.css';
 </style>

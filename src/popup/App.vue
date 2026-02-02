@@ -71,33 +71,13 @@
 <script setup lang="ts">
 const openChat = async () => {
   try {
-    // 获取或创建会话
-    const sessionsResponse = await chrome.runtime.sendMessage({
-      type: 'GET_SESSIONS'
-    })
-
-    let sessionId = 1
-    if (sessionsResponse?.success && sessionsResponse.data?.length > 0) {
-      // 使用最新的会话
-      sessionId = sessionsResponse.data[0].id
-    } else {
-      // 创建新会话
-      const createResponse = await chrome.runtime.sendMessage({
-        type: 'CREATE_SESSION',
-        payload: { title: `新对话 ${new Date().toLocaleString('zh-CN')}` }
-      })
-      if (createResponse?.success) {
-        sessionId = createResponse.data.id
-      }
-    }
-
-    // 打开内嵌聊天窗口
+    // 打开内嵌聊天窗口 - 让 content script 自动处理会话
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
     if (tab?.id) {
       try {
         await chrome.tabs.sendMessage(tab.id, {
-          type: 'OPEN_CHAT',
-          sessionId
+          type: 'OPEN_CHAT'
+          // 不传 sessionId，让 content script 自动获取或创建
         })
       } catch (e) {
         // Content script未注入，先注入再发送消息
@@ -113,8 +93,7 @@ const openChat = async () => {
         // 等待一下让content script初始化
         await new Promise(resolve => setTimeout(resolve, 100))
         await chrome.tabs.sendMessage(tab.id, {
-          type: 'OPEN_CHAT',
-          sessionId
+          type: 'OPEN_CHAT'
         })
       }
     }
@@ -127,24 +106,46 @@ const openChat = async () => {
 
 const openFullscreen = async () => {
   try {
-    // 获取或创建会话
-    const sessionsResponse = await chrome.runtime.sendMessage({
-      type: 'GET_SESSIONS'
-    })
+    // 获取当前标签页信息
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
+    const tabId = tab?.id
+    const pageUrl = tab?.url || ''
+    const pageTitle = tab?.title || '新对话'
 
-    let sessionId = 1
-    if (sessionsResponse?.success && sessionsResponse.data?.length > 0) {
-      // 使用最新的会话
-      sessionId = sessionsResponse.data[0].id
-    } else {
-      // 创建新会话
-      const createResponse = await chrome.runtime.sendMessage({
-        type: 'CREATE_SESSION',
-        payload: { title: `新对话 ${new Date().toLocaleString('zh-CN')}` }
+    // 检查该标签页是否已有会话
+    let sessionId: number
+    if (tabId) {
+      const existingSession = await chrome.runtime.sendMessage({
+        type: 'GET_SESSION_BY_TAB',
+        payload: { tabId }
       })
-      if (createResponse?.success) {
+
+      if (existingSession.success && existingSession.data) {
+        sessionId = existingSession.data.id
+      } else {
+        // 创建新会话
+        const createResponse = await chrome.runtime.sendMessage({
+          type: 'CREATE_SESSION',
+          payload: {
+            title: pageTitle,
+            tabId,
+            pageUrl,
+            pageTitle
+          }
+        })
         sessionId = createResponse.data.id
       }
+    } else {
+      // 无法获取 tabId，创建普通会话
+      const createResponse = await chrome.runtime.sendMessage({
+        type: 'CREATE_SESSION',
+        payload: {
+          title: pageTitle,
+          pageUrl,
+          pageTitle
+        }
+      })
+      sessionId = createResponse.data.id
     }
 
     // 在新标签页打开
@@ -163,16 +164,17 @@ const openOptions = () => {
 </script>
 
 <style scoped>
+
 .popup-container {
   width: 380px;
-  background: #ffffff;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: var(--bg-primary);
+  font-family: var(--font-sans);
 }
 
 .header {
   padding: 24px 20px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
+  background: var(--gradient-primary);
+  color: var(--text-inverse);
 }
 
 .header-content {
@@ -200,44 +202,46 @@ const openOptions = () => {
 
 .header-text h2 {
   margin: 0;
-  font-size: 20px;
+  font-size: var(--text-xl);
   font-weight: 600;
 }
 
 .header-text p {
-  margin: 4px 0 0 0;
-  font-size: 13px;
+  margin: var(--space-1) 0 0 0;
+  font-size: var(--text-base);
   opacity: 0.9;
 }
 
 .content {
-  padding: 20px;
+  padding: var(--space-5);
 }
 
 .divider {
   height: 1px;
-  background: #e5e7eb;
-  margin: 16px 0;
+  background: var(--border-primary);
+  margin: var(--space-4) 0;
 }
 
 .actions-section {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--space-2);
 }
 
 .action-btn {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 14px 16px;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
   border: none;
-  border-radius: 10px;
+  border-radius: var(--radius-lg);
   cursor: pointer;
-  font-size: 14px;
+  font-size: var(--text-md);
   font-weight: 500;
-  transition: all 0.2s;
+  transition: all var(--transition-base);
   font-family: inherit;
+  position: relative;
+  overflow: hidden;
 }
 
 .action-btn svg {
@@ -247,48 +251,54 @@ const openOptions = () => {
 }
 
 .action-btn.primary {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: var(--gradient-primary);
   color: white;
+  box-shadow: var(--shadow-sm);
 }
 
 .action-btn.primary:hover {
   transform: translateY(-2px);
-  box-shadow: 0 8px 16px rgba(102, 126, 234, 0.3);
+  box-shadow: var(--shadow-glow);
+}
+
+.action-btn.primary:active {
+  transform: translateY(0);
 }
 
 .action-btn.secondary {
-  background: #f3f4f6;
-  color: #374151;
+  background: var(--surface-secondary);
+  color: var(--text-secondary);
 }
 
 .action-btn.secondary svg {
-  stroke: #667eea;
+  stroke: var(--primary-500);
 }
 
 .action-btn.secondary:hover {
-  background: #e5e7eb;
+  background: var(--bg-hover);
+  border-color: var(--primary-500);
 }
 
 .settings-section h3 {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 14px;
-  color: #374151;
-  margin: 0 0 12px 0;
+  gap: var(--space-2);
+  font-size: var(--text-md);
+  color: var(--text-secondary);
+  margin: 0 0 var(--space-3) 0;
   font-weight: 600;
 }
 
 .settings-section h3 svg {
   width: 16px;
   height: 16px;
-  stroke: #667eea;
+  stroke: var(--primary-500);
 }
 
 .mode-selector {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--space-2);
 }
 
 .mode-option {
@@ -303,39 +313,39 @@ const openOptions = () => {
 .mode-content {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 14px;
-  border: 2px solid #e5e7eb;
-  border-radius: 10px;
-  transition: all 0.2s;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 2px solid var(--border-primary);
+  border-radius: var(--radius-lg);
+  transition: all var(--transition-base);
 }
 
 .mode-option:hover .mode-content {
-  border-color: #667eea;
-  background: #f9fafb;
+  border-color: var(--primary-500);
+  background: var(--bg-hover);
 }
 
 .mode-option.active .mode-content {
-  border-color: #667eea;
+  border-color: var(--primary-500);
   background: linear-gradient(135deg, rgba(102, 126, 234, 0.05) 0%, rgba(118, 75, 162, 0.05) 100%);
 }
 
 .mode-content svg {
   width: 24px;
   height: 24px;
-  stroke: #667eea;
+  stroke: var(--primary-500);
   flex-shrink: 0;
 }
 
 .mode-title {
-  font-size: 14px;
+  font-size: var(--text-md);
   font-weight: 600;
-  color: #1f2937;
+  color: var(--text-primary);
 }
 
 .mode-desc {
-  font-size: 12px;
-  color: #6b7280;
+  font-size: var(--text-sm);
+  color: var(--text-tertiary);
   margin-top: 2px;
 }
 
@@ -346,38 +356,46 @@ const openOptions = () => {
 }
 
 .version {
-  font-size: 12px;
-  color: #9ca3af;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
 }
 
 .footer-link {
-  font-size: 12px;
-  color: #667eea;
+  font-size: var(--text-sm);
+  color: var(--primary-500);
   text-decoration: none;
   font-weight: 500;
+  transition: all var(--transition-base);
 }
 
 .footer-link:hover {
   text-decoration: underline;
+  color: var(--primary-600);
 }
 
 .info-section {
-  margin-top: 16px;
+  margin-top: var(--space-4);
 }
 
 .info-item {
   display: flex;
-  gap: 12px;
-  padding: 12px;
-  background: #f9fafb;
-  border-radius: 8px;
-  border: 1px solid #e5e7eb;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  background: var(--surface-secondary);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-primary);
+  transition: all var(--transition-base);
+}
+
+.info-item:hover {
+  border-color: var(--primary-500);
+  box-shadow: var(--shadow-sm);
 }
 
 .info-item svg {
   width: 20px;
   height: 20px;
-  stroke: #667eea;
+  stroke: var(--primary-500);
   flex-shrink: 0;
   margin-top: 2px;
 }
@@ -387,15 +405,21 @@ const openOptions = () => {
 }
 
 .info-title {
-  font-size: 13px;
+  font-size: var(--text-base);
   font-weight: 600;
-  color: #374151;
-  margin-bottom: 4px;
+  color: var(--text-secondary);
+  margin-bottom: var(--space-1);
 }
 
 .info-desc {
-  font-size: 12px;
-  color: #6b7280;
+  font-size: var(--text-sm);
+  color: var(--text-tertiary);
   line-height: 1.5;
 }
+</style>
+
+<!-- 全局CSS变量 - 非scoped以确保全局可用 -->
+<style>
+@import '../styles/variables.css';
+@import '../styles/animations.css';
 </style>

@@ -487,14 +487,15 @@ const stopDrag = () => {
 </script>
 
 <style scoped>
+
 .chat-window {
   position: fixed;
-  background: #fff;
-  border-radius: 8px;
+  background: var(--bg-primary);
+  border-radius: var(--radius-lg);
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.12);
   display: flex;
   flex-direction: column;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-family: var(--font-sans);
   z-index: 2147483647;
   overflow: hidden;
 }
@@ -520,22 +521,22 @@ const stopDrag = () => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 10px 12px;
-  background: #f8f9fa;
-  border-bottom: 1px solid #e9ecef;
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-primary);
   cursor: move;
   user-select: none;
 }
 
 .title {
-  font-size: 13px;
+  font-size: var(--text-base);
   font-weight: 500;
-  color: #333;
+  color: var(--text-primary);
 }
 
 .header-actions {
   display: flex;
-  gap: 4px;
+  gap: var(--space-1);
 }
 
 .icon-btn {
@@ -543,16 +544,18 @@ const stopDrag = () => {
   height: 24px;
   border: none;
   background: transparent;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #666;
+  color: var(--text-tertiary);
+  transition: all var(--transition-base);
 }
 
 .icon-btn:hover {
-  background: #e9ecef;
+  background: var(--bg-hover);
+  color: var(--text-secondary);
 }
 
 .icon-btn svg {
@@ -566,16 +569,34 @@ const stopDrag = () => {
   flex-direction: column;
   flex: 1;
   overflow: hidden;
-  background: #fff;
+  background: var(--bg-primary);
 }
 
 .messages-container {
   flex: 1;
   overflow-y: auto;
-  padding: 12px;
+  padding: var(--space-3);
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-2);
+  scroll-behavior: smooth;
+}
+
+.messages-container::-webkit-scrollbar {
+  width: 4px;
+}
+
+.messages-container::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.messages-container::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: var(--radius-full);
+}
+
+.messages-container::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
 }
 
 .empty-state {
@@ -583,8 +604,8 @@ const stopDrag = () => {
   align-items: center;
   justify-content: center;
   height: 100%;
-  color: #adb5bd;
-  font-size: 13px;
+  color: var(--text-muted);
+  font-size: var(--text-base);
 }
 
 .empty-state p {
@@ -594,6 +615,7 @@ const stopDrag = () => {
 .message {
   display: flex;
   flex-direction: column;
+  animation: fadeInUp var(--transition-base) ease-out;
 }
 
 .message.user {
@@ -606,29 +628,37 @@ const stopDrag = () => {
 
 .bubble {
   max-width: 85%;
-  padding: 8px 12px;
-  border-radius: 6px;
-  font-size: 13px;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  font-size: var(--text-base);
   line-height: 1.4;
   word-wrap: break-word;
+  box-shadow: var(--shadow-sm);
+  transition: all var(--transition-fast);
+}
+
+.bubble:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
 }
 
 .user-bubble {
-  background: #007bff;
-  color: #fff;
-  border-bottom-right-radius: 2px;
+  background: var(--user-bg);
+  color: var(--user-text);
+  border-bottom-right-radius: var(--radius-sm);
 }
 
 .assistant-bubble {
-  background: #f1f3f4;
-  color: #333;
-  border-bottom-left-radius: 2px;
+  background: var(--assistant-bg);
+  color: var(--assistant-text);
+  border: 1px solid var(--assistant-border);
+  border-bottom-left-radius: var(--radius-sm);
 }
 
 .assistant-content {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--space-2);
   max-width: 85%;
 }
 
@@ -703,18 +733,18 @@ const stopDrag = () => {
 }
 
 .tool-badge.rejected {
-  background: #f8d7da;
-  color: #721c24;
+  background: var(--error-500);
+  color: white;
 }
 
 .tool-params {
-  background: #fffbe6;
-  border-radius: 4px;
-  padding: 6px 8px;
+  background: var(--tool-params-bg);
+  border-radius: var(--radius-sm);
+  padding: var(--space-1) var(--space-2);
   margin: 0;
-  font-size: 11px;
-  font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
-  color: #614700;
+  font-size: var(--text-xs);
+  font-family: var(--font-mono);
+  color: var(--tool-text);
   white-space: pre-wrap;
   word-break: break-all;
   overflow-x: auto;
@@ -722,50 +752,120 @@ const stopDrag = () => {
 
 .tool-actions {
   display: flex;
-  gap: 6px;
-  margin-top: 8px;
+  gap: var(--space-1);
+  margin-top: var(--space-2);
   justify-content: flex-end;
 }
 
 .btn {
   padding: 4px 12px;
   border: none;
-  border-radius: 4px;
-  font-size: 12px;
-  font-weight: 500;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+  font-weight: 600;
   cursor: pointer;
+  transition: all var(--transition-base);
 }
 
 .btn-approve {
-  background: #28a745;
+  background: var(--success-500);
   color: #fff;
 }
 
 .btn-approve:hover {
-  background: #218838;
+  background: var(--success-600);
 }
 
 .btn-reject {
-  background: #dc3545;
+  background: var(--error-500);
   color: #fff;
 }
 
 .btn-reject:hover {
-  background: #c82333;
+  background: var(--error-600);
+}
+
+/* 工具块 */
+.tool-block {
+  background: var(--tool-bg);
+  border: 1px solid var(--tool-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+  font-size: var(--text-sm);
+  transition: all var(--transition-base);
+}
+
+.tool-block:hover {
+  box-shadow: var(--shadow-sm);
+}
+
+/* 思考块 */
+.think-block {
+  background: var(--think-bg);
+  border: 1px solid var(--think-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+  font-size: var(--text-sm);
+  margin-bottom: var(--space-2);
+  transition: all var(--transition-base);
+}
+
+.think-block:hover {
+  box-shadow: var(--shadow-sm);
+}
+
+.think-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-bottom: var(--space-2);
+}
+
+.think-icon {
+  font-size: var(--text-md);
+  animation: breathe 2s ease-in-out infinite;
+}
+
+.think-label {
+  font-weight: 600;
+  color: var(--think-text);
+}
+
+.think-content {
+  color: var(--text-secondary);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.tool-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-bottom: var(--space-2);
+}
+
+.tool-icon {
+  color: var(--warning-500);
+}
+
+.tool-name {
+  font-weight: 600;
+  color: var(--tool-text);
 }
 
 /* 打字动画 */
 .bubble.typing {
   display: flex;
-  gap: 4px;
-  padding: 10px 14px;
+  gap: var(--space-1);
+  padding: var(--space-3);
 }
 
 .bubble.typing span {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: #adb5bd;
+  background: var(--text-muted);
   animation: typing 1.2s infinite;
 }
 
@@ -777,65 +877,71 @@ const stopDrag = () => {
   animation-delay: 0.3s;
 }
 
-@keyframes typing {
-  0%, 60%, 100% {
-    transform: translateY(0);
-  }
-  30% {
-    transform: translateY(-6px);
-  }
-}
-
 /* 输入区 */
 .chat-input {
   display: flex;
-  gap: 8px;
-  padding: 10px 12px;
-  border-top: 1px solid #e9ecef;
-  background: #fff;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-top: 1px solid var(--border-primary);
+  background: var(--bg-primary);
+  box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.05);
 }
 
 .chat-input textarea {
   flex: 1;
-  border: 1px solid #dee2e6;
-  border-radius: 6px;
-  padding: 8px 10px;
-  font-size: 13px;
+  border: 1px solid var(--input-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-base);
   font-family: inherit;
   resize: none;
   outline: none;
   max-height: 80px;
+  background: var(--input-bg);
+  color: var(--text-primary);
+  transition: all var(--transition-base);
 }
 
 .chat-input textarea:focus {
-  border-color: #007bff;
+  border-color: var(--input-focus);
+  box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.1);
 }
 
 .chat-input textarea:disabled {
-  background: #f8f9fa;
+  background: var(--bg-secondary);
   cursor: not-allowed;
+  opacity: 0.6;
 }
 
 .send-btn {
   width: 36px;
   height: 36px;
   border: none;
-  background: #007bff;
-  border-radius: 6px;
+  background: var(--gradient-primary);
+  border-radius: var(--radius-md);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  transition: all var(--transition-base);
+  box-shadow: var(--shadow-sm);
 }
 
 .send-btn:hover:not(:disabled) {
-  background: #0069d9;
+  background: var(--gradient-hover);
+  box-shadow: var(--shadow-glow);
+  transform: translateY(-1px);
+}
+
+.send-btn:active:not(:disabled) {
+  transform: translateY(0);
 }
 
 .send-btn:disabled {
-  background: #dee2e6;
+  background: var(--border-primary);
   cursor: not-allowed;
+  opacity: 0.6;
 }
 
 .send-btn svg {
@@ -843,22 +949,10 @@ const stopDrag = () => {
   height: 16px;
   stroke: #fff;
 }
+</style>
 
-/* 滚动条 */
-.messages-container::-webkit-scrollbar {
-  width: 4px;
-}
-
-.messages-container::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.messages-container::-webkit-scrollbar-thumb {
-  background: #dee2e6;
-  border-radius: 2px;
-}
-
-.messages-container::-webkit-scrollbar-thumb:hover {
-  background: #adb5bd;
-}
+<!-- 全局CSS变量 - 非scoped以确保全局可用 -->
+<style>
+@import '../styles/variables.css';
+@import '../styles/animations.css';
 </style>
