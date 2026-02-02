@@ -827,8 +827,12 @@ const sendStreamMessage = async (content: string) => {
     const port = chrome.runtime.connect({ name: 'chat-stream' })
 
     port.onMessage.addListener((msg) => {
+      // 调试：打印收到的消息
+      console.log('[Chat Stream] 收到消息:', msg)
+
       if (msg.type === 'data') {
         const data = msg.data
+        console.log('[Chat Stream] data 内容:', data)
 
         // 处理文本内容 - 流式过程中不断拼接显示
         if (data.content) {
@@ -870,6 +874,7 @@ const sendStreamMessage = async (content: string) => {
           }
         }
       } else if (msg.type === 'done') {
+        console.log('[Chat Stream] 流式传输完成')
         // 流式传输完成 - 用 think 和 tool_call 替换原始 content 显示
         isStreaming.value = false
 
