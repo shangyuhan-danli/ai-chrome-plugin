@@ -1042,12 +1042,9 @@ const handleNonBrowserToolApproved = async (toolId: string) => {
         const data = msg.data
         console.log('[NonBrowserTool] data 内容:', JSON.stringify(data))
 
-        // 检查是否是工具执行结果（role=function 或者有 content 但没有其他字段）
-        const isToolResult = data.role === 'function' ||
-          (data.content && !data.think && !data.toolCall && !data.statistic)
-
-        if (isToolResult && data.content) {
-          toolResultContent += data.content
+        // 检查是否是工具执行结果（role=tool）
+        if (data.role === 'tool') {
+          toolResultContent += data.content || ''
           console.log('[NonBrowserTool] 收集工具执行结果:', toolResultContent)
           // 显示在界面上
           const textBlock = streamMessages.value[messageIndex].blocks.find(b => b.type === 'text')
@@ -1095,7 +1092,6 @@ const handleNonBrowserToolApproved = async (toolId: string) => {
       } else if (msg.type === 'done') {
         console.log('[NonBrowserTool] 流式传输完成')
         console.log('[NonBrowserTool] toolResultContent:', toolResultContent)
-        console.log('[NonBrowserTool] streamingContent:', streamingContent.value)
 
         port.disconnect()
 
