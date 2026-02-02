@@ -1,0 +1,226 @@
+/**
+ * AI Chat Extension - CSS Design Tokens
+ * 统一的样式变量系统，支持亮色/暗色模式
+ */
+
+/* ===== 基础变量定义 ===== */
+:root {
+  /* 主题色 - 紫蓝渐变 */
+  --primary-500: #667eea;
+  --primary-600: #5a67d8;
+  --primary-700: #4c51bf;
+  --secondary-500: #764ba2;
+  --secondary-600: #6b4190;
+  
+  /* 功能色 */
+  --success-500: #10b981;
+  --success-600: #059669;
+  --warning-500: #f59e0b;
+  --warning-600: #d97706;
+  --error-500: #ef4444;
+  --error-600: #dc2626;
+  --info-500: #3b82f6;
+  --info-600: #2563eb;
+  
+  /* 思考过程 */
+  --think-bg: #f0f7ff;
+  --think-border: #91caff;
+  --think-text: #1677ff;
+  
+  /* 工具调用 */
+  --tool-bg: #fffbeb;
+  --tool-border: #fcd34d;
+  --tool-text: #b45309;
+  --tool-params-bg: #fef3c7;
+  
+  /* 渐变 */
+  --gradient-primary: linear-gradient(135deg, var(--primary-500) 0%, var(--secondary-500) 100%);
+  --gradient-hover: linear-gradient(135deg, var(--primary-600) 0%, var(--secondary-600) 100%);
+  
+  /* 间距系统 - 8px 基准 */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  
+  /* 圆角系统 */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-full: 9999px;
+  
+  /* 阴影系统 */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+  --shadow-glow: 0 0 20px rgba(102, 126, 234, 0.3);
+  
+  /* 过渡时间 */
+  --transition-fast: 150ms;
+  --transition-base: 200ms;
+  --transition-slow: 300ms;
+  
+  /* 字体 */
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'Monaco', 'Menlo', 'Consolas', monospace;
+  
+  /* 字体大小 */
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-base: 13px;
+  --text-md: 14px;
+  --text-lg: 16px;
+  --text-xl: 20px;
+  --text-2xl: 24px;
+}
+
+/* ===== 亮色模式（默认）===== */
+:root,
+[data-theme="light"] {
+  /* 背景 */
+  --bg-primary: #ffffff;
+  --bg-secondary: #fafafa;
+  --bg-tertiary: #f5f5f5;
+  --bg-hover: rgba(0, 0, 0, 0.04);
+  --bg-active: rgba(0, 0, 0, 0.08);
+  
+  /* 表面 */
+  --surface-primary: #ffffff;
+  --surface-secondary: #f9fafb;
+  --surface-elevated: #ffffff;
+  
+  /* 文字 */
+  --text-primary: #111827;
+  --text-secondary: #4b5563;
+  --text-tertiary: #6b7280;
+  --text-muted: #9ca3af;
+  --text-inverse: #ffffff;
+  
+  /* 边框 */
+  --border-primary: #e5e7eb;
+  --border-secondary: #d1d5db;
+  --border-focus: var(--primary-500);
+  
+  /* 用户消息 */
+  --user-bg: #1a73e8;
+  --user-text: #ffffff;
+  
+  /* AI消息 */
+  --assistant-bg: #ffffff;
+  --assistant-text: #333333;
+  --assistant-border: #e0e0e0;
+  
+  /* 输入框 */
+  --input-bg: #ffffff;
+  --input-border: #e5e7eb;
+  --input-focus: var(--primary-500);
+  
+  /* 滚动条 */
+  --scrollbar-track: transparent;
+  --scrollbar-thumb: #d1d5db;
+  --scrollbar-thumb-hover: #9ca3af;
+}
+
+/* ===== 暗色模式 ===== */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg-primary: #0f0f0f;
+    --bg-secondary: #1a1a1a;
+    --bg-tertiary: #252525;
+    --bg-hover: rgba(255, 255, 255, 0.04);
+    --bg-active: rgba(255, 255, 255, 0.08);
+    
+    --surface-primary: #1a1a1a;
+    --surface-secondary: #252525;
+    --surface-elevated: #2d2d2d;
+    
+    --text-primary: #fafafa;
+    --text-secondary: #a0a0a0;
+    --text-tertiary: #737373;
+    --text-muted: #525252;
+    --text-inverse: #0f0f0f;
+    
+    --border-primary: #2d2d2d;
+    --border-secondary: #404040;
+    --border-focus: var(--primary-500);
+    
+    --user-bg: #3b82f6;
+    --user-text: #ffffff;
+    
+    --assistant-bg: #252525;
+    --assistant-text: #e5e5e5;
+    --assistant-border: #404040;
+    
+    --input-bg: #1a1a1a;
+    --input-border: #404040;
+    --input-focus: var(--primary-500);
+    
+    --scrollbar-track: transparent;
+    --scrollbar-thumb: #404040;
+    --scrollbar-thumb-hover: #525252;
+    
+    /* 暗色模式下的思考块 */
+    --think-bg: #1e3a5f;
+    --think-border: #2563eb;
+    --think-text: #60a5fa;
+    
+    /* 暗色模式下的工具块 */
+    --tool-bg: #451a03;
+    --tool-border: #d97706;
+    --tool-text: #fbbf24;
+    --tool-params-bg: #78350f;
+  }
+}
+
+/* 手动设置暗色模式 */
+[data-theme="dark"] {
+  --bg-primary: #0f0f0f;
+  --bg-secondary: #1a1a1a;
+  --bg-tertiary: #252525;
+  --bg-hover: rgba(255, 255, 255, 0.04);
+  --bg-active: rgba(255, 255, 255, 0.08);
+  
+  --surface-primary: #1a1a1a;
+  --surface-secondary: #252525;
+  --surface-elevated: #2d2d2d;
+  
+  --text-primary: #fafafa;
+  --text-secondary: #a0a0a0;
+  --text-tertiary: #737373;
+  --text-muted: #525252;
+  --text-inverse: #0f0f0f;
+  
+  --border-primary: #2d2d2d;
+  --border-secondary: #404040;
+  --border-focus: var(--primary-500);
+  
+  --user-bg: #3b82f6;
+  --user-text: #ffffff;
+  
+  --assistant-bg: #252525;
+  --assistant-text: #e5e5e5;
+  --assistant-border: #404040;
+  
+  --input-bg: #1a1a1a;
+  --input-border: #404040;
+  --input-focus: var(--primary-500);
+  
+  --scrollbar-track: transparent;
+  --scrollbar-thumb: #404040;
+  --scrollbar-thumb-hover: #525252;
+  
+  --think-bg: #1e3a5f;
+  --think-border: #2563eb;
+  --think-text: #60a5fa;
+  
+  --tool-bg: #451a03;
+  --tool-border: #d97706;
+  --tool-text: #fbbf24;
+  --tool-params-bg: #78350f;
+}

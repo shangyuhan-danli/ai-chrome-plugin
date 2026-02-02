@@ -146,7 +146,16 @@
                   <span v-if="block.status === 'approved'" class="tool-badge approved">已批准</span>
                   <span v-else-if="block.status === 'rejected'" class="tool-badge rejected">已拒绝</span>
                 </div>
-                <pre class="tool-params">{{ formatToolInput(block.input) }}</pre>
+                <!-- 工具参数 - 可折叠的 JSON -->
+                <div class="tool-params-container">
+                  <div class="tool-params-header" @click="toggleJsonCollapse($event)">
+                    <svg class="collapse-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                      <polyline points="6 9 12 15 18 9" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                    <span class="tool-params-label">参数</span>
+                  </div>
+                  <pre class="tool-params" :class="{ collapsed: false }"><code v-html="formatJsonWithHighlight(block.input)"></code></pre>
+                </div>
                 <div v-if="block.status === 'pending' && !isLoading" class="tool-actions">
                   <button class="btn btn-approve" @click="handleToolResponse(block.id, true)">Approve</button>
                   <button class="btn btn-reject" @click="handleToolResponse(block.id, false)">Reject</button>
@@ -581,6 +590,40 @@ const getMessageText = (msg: StreamMessage): string => {
 
 const formatToolInput = (input: Record<string, any>): string => {
   return JSON.stringify(input, null, 2)
+}
+
+// JSON 语法高亮格式化
+const formatJsonWithHighlight = (obj: Record<string, any>): string => {
+  const json = JSON.stringify(obj, null, 2)
+  return json
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?)/g, (match) => {
+      let cls = 'json-string'
+      if (/:$/.test(match)) {
+        cls = 'json-key'
+        match = match.replace(/:$/, '')
+        return `<span class="${cls}">${match}</span>:`
+      }
+      return `<span class="${cls}">${match}</span>`
+    })
+    .replace(/\b(true|false)\b/g, '<span class="json-boolean">$1</span>')
+    .replace(/\b(null)\b/g, '<span class="json-null">$1</span>')
+    .replace(/\b(-?\d+\.?\d*)\b/g, '<span class="json-number">$1</span>')
+}
+
+// 切换 JSON 折叠状态
+const toggleJsonCollapse = (event: Event) => {
+  const header = event.currentTarget as HTMLElement
+  const container = header.parentElement
+  const pre = container?.querySelector('.tool-params')
+  const icon = header.querySelector('.collapse-icon')
+
+  if (pre && icon) {
+    pre.classList.toggle('collapsed')
+    icon.classList.toggle('rotated')
+  }
 }
 
 // 获取当前页面上下文
@@ -1401,14 +1444,16 @@ const createNewSession = async () => {
 }
 
 .message-box {
-  max-width: 85%;
+  max-width: 100%;
   padding: var(--space-3) var(--space-4);
   font-size: var(--text-md);
   line-height: 1.5;
   word-wrap: break-word;
+  word-break: break-word;
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-sm);
   transition: transform var(--transition-fast), box-shadow var(--transition-fast);
+  overflow-wrap: break-word;
 }
 
 .message-box:hover {
@@ -1420,6 +1465,7 @@ const createNewSession = async () => {
   background: var(--user-bg);
   color: var(--user-text);
   border-bottom-right-radius: var(--radius-sm);
+  max-width: 85%;
 }
 
 .assistant-box {
@@ -1436,7 +1482,16 @@ const createNewSession = async () => {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  max-width: 85%;
+  max-width: 100%;
+  width: 100%;
+  overflow: hidden;
+}
+
+.block-content {
+  flex: 1;
+  word-break: break-word;
+  overflow-wrap: break-word;
+  white-space: pre-wrap;
 }
 
 /* 思考块样式 */
@@ -1492,10 +1547,6 @@ const createNewSession = async () => {
   color: #f59e0b;
 }
 
-.block-content {
-  flex: 1;
-}
-
 /* 工具块样式 */
 .tool-block {
   background: var(--tool-bg);
@@ -1504,6 +1555,7 @@ const createNewSession = async () => {
   padding: var(--space-3);
   font-size: var(--text-base);
   transition: all var(--transition-base);
+  overflow: hidden;
 }
 
 .tool-block:hover {
@@ -1543,17 +1595,97 @@ const createNewSession = async () => {
   color: white;
 }
 
+/* 工具参数容器 */
+.tool-params-container {
+  margin-top: var(--space-2);
+}
+
+.tool-params-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) 0;
+  cursor: pointer;
+  user-select: none;
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  transition: color var(--transition-base);
+}
+
+.tool-params-header:hover {
+  color: var(--text-secondary);
+}
+
+.collapse-icon {
+  width: 14px;
+  height: 14px;
+  transition: transform var(--transition-base);
+}
+
+.collapse-icon.rotated {
+  transform: rotate(-90deg);
+}
+
+.tool-params-label {
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
 .tool-params {
   background: var(--tool-params-bg);
   border-radius: var(--radius-sm);
   padding: var(--space-2) var(--space-3);
   margin: 0;
-  font-size: var(--text-sm);
+  font-size: var(--text-xs);
   font-family: var(--font-mono);
-  color: var(--tool-text);
+  color: var(--text-secondary);
   white-space: pre-wrap;
-  word-break: break-all;
+  word-break: break-word;
   overflow-x: auto;
+  max-height: 300px;
+  overflow-y: auto;
+  transition: max-height 0.3s ease, padding 0.3s ease, opacity 0.3s ease;
+  line-height: 1.5;
+}
+
+.tool-params.collapsed {
+  max-height: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  opacity: 0;
+  overflow: hidden;
+}
+
+.tool-params::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+.tool-params::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: var(--radius-full);
+}
+
+/* JSON 语法高亮 */
+.tool-params .json-key {
+  color: #881391;
+}
+
+.tool-params .json-string {
+  color: #1a73e8;
+}
+
+.tool-params .json-number {
+  color: #098658;
+}
+
+.tool-params .json-boolean {
+  color: #d63384;
+}
+
+.tool-params .json-null {
+  color: #6c757d;
 }
 
 .tool-actions {
