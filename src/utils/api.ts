@@ -25,6 +25,7 @@ export interface ChatStreamRequest {
 
 // 流式响应回调数据
 export interface StreamCallbackData {
+  role?: string
   content?: string
   think?: ThinkContent
   toolCall?: ToolCallContent
@@ -193,6 +194,9 @@ export class ApiService {
             // 构建回调数据
             const callbackData: StreamCallbackData = {}
 
+            if (data.role) {
+              callbackData.role = data.role
+            }
             if (data.content) {
               callbackData.content = data.content
             }
@@ -242,6 +246,7 @@ export class ApiService {
             }
 
             const callbackData: StreamCallbackData = {}
+            if (data.role) callbackData.role = data.role
             if (data.content) callbackData.content = data.content
             if (data.think) callbackData.think = data.think
             if (data.tool_call) callbackData.toolCall = data.tool_call
