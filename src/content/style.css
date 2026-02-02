@@ -25,3 +25,10 @@ body.ai-chat-sidebar-open > [style*="position: fixed"]:not(#ai-chat-extension-ro
   transform: translateX(400px);
   transition: transform 0.3s ease;
 }
+
+/* 暗色模式下的特定调整 */
+@media (prefers-color-scheme: dark) {
+  body.ai-chat-sidebar-open > [style*="position: fixed"]:not(#ai-chat-extension-root) {
+    transition: transform 0.3s ease, background-color 0.3s ease;
+  }
+}
