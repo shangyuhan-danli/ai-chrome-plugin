@@ -1040,14 +1040,22 @@ const handleNonBrowserToolApproved = async (toolId: string) => {
 
       if (msg.type === 'data') {
         const data = msg.data
-        console.log('[NonBrowserTool] data 内容:', data)
+        console.log('[NonBrowserTool] data 内容:', JSON.stringify(data))
 
-        // 检查是否是 role=function 的工具执行结果
-        if (data.role === 'function') {
-          // 收集工具执行结果
-          toolResultContent = data.content || ''
-          console.log('[NonBrowserTool] 收到工具执行结果:', toolResultContent)
-          return
+        // 检查是否是工具执行结果（role=function 或者有 content 但没有其他字段）
+        const isToolResult = data.role === 'function' ||
+          (data.content && !data.think && !data.toolCall && !data.statistic)
+
+        if (isToolResult && data.content) {
+          toolResultContent += data.content
+          console.log('[NonBrowserTool] 收集工具执行结果:', toolResultContent)
+          // 显示在界面上
+          const textBlock = streamMessages.value[messageIndex].blocks.find(b => b.type === 'text')
+          if (textBlock && textBlock.type === 'text') {
+            textBlock.text = `[工具执行中...] ${toolResultContent.substring(0, 100)}...`
+          }
+          nextTick(scrollToBottom)
+          return  // 不继续处理其他逻辑
         }
 
         if (data.content) {
@@ -1085,13 +1093,15 @@ const handleNonBrowserToolApproved = async (toolId: string) => {
           }
         }
       } else if (msg.type === 'done') {
-        console.log('[NonBrowserTool] 流式传输完成, toolResultContent:', toolResultContent)
+        console.log('[NonBrowserTool] 流式传输完成')
+        console.log('[NonBrowserTool] toolResultContent:', toolResultContent)
+        console.log('[NonBrowserTool] streamingContent:', streamingContent.value)
 
         port.disconnect()
 
         // 如果收到了工具执行结果，需要继续发送给后端
         if (toolResultContent) {
-          console.log('[NonBrowserTool] 继续发送工具结果给后端...')
+          console.log('[NonBrowserTool] 检测到工具结果，继续发送请求...')
           // 更新当前消息显示工具结果
           streamMessages.value[messageIndex].blocks = [{
             type: 'text',
@@ -1100,7 +1110,7 @@ const handleNonBrowserToolApproved = async (toolId: string) => {
           streamMessages.value[messageIndex].isComplete = true
           nextTick(scrollToBottom)
 
-          // 继续发送工具结果给后端，让 AI 继续处理
+          // 继续发送给后端，让 AI 继续处理
           await sendToolResultToBackend(toolId, toolResultContent)
           return
         }
