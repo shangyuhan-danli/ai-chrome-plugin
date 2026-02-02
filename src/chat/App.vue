@@ -1249,18 +1249,14 @@ const sendToolResultToBackend = async (toolId: string, result: string) => {
     const pageContext = await getPageContext()
     const browserTools = browserToolService.getToolDefinitions()
 
-    // 发送工具执行结果，role 仍然是 function
+    // 发送空消息，role 为 user，让 AI 继续处理
     port.postMessage({
       agentId: selectedAgent.value?.id || '',
       sessionId: currentSessionId.value,
-      message: JSON.stringify({
-        toolId,
-        approved: true,
-        result: result
-      }),
+      message: '',  // 空消息
       model: currentModel.value,
       userId: 'default_user',
-      role: 'function',
+      role: 'user',  // 改为 user
       currentPageInfo: pageContext,
       browserTools: browserTools
     })
