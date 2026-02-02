@@ -1381,6 +1381,9 @@ const createNewSession = async () => {
   color: var(--text-inverse);
   user-select: none;
   box-shadow: var(--shadow-md);
+  position: relative;
+  z-index: 100;
+  overflow: visible;
 }
 
 .header-left {
