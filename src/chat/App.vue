@@ -1030,13 +1030,25 @@ const handleNonBrowserToolApproved = async (toolId: string) => {
 
   let currentThink = ''
   let pendingToolCall: ToolUseBlock | null = null
+  let toolResultContent = ''  // 收集工具执行结果
 
   try {
     const port = chrome.runtime.connect({ name: 'chat-stream' })
 
-    port.onMessage.addListener((msg) => {
+    port.onMessage.addListener(async (msg) => {
+      console.log('[NonBrowserTool] 收到消息:', msg)
+
       if (msg.type === 'data') {
         const data = msg.data
+        console.log('[NonBrowserTool] data 内容:', data)
+
+        // 检查是否是 role=function 的工具执行结果
+        if (data.role === 'function') {
+          // 收集工具执行结果
+          toolResultContent = data.content || ''
+          console.log('[NonBrowserTool] 收到工具执行结果:', toolResultContent)
+          return
+        }
 
         if (data.content) {
           streamingContent.value += data.content
@@ -1073,6 +1085,26 @@ const handleNonBrowserToolApproved = async (toolId: string) => {
           }
         }
       } else if (msg.type === 'done') {
+        console.log('[NonBrowserTool] 流式传输完成, toolResultContent:', toolResultContent)
+
+        port.disconnect()
+
+        // 如果收到了工具执行结果，需要继续发送给后端
+        if (toolResultContent) {
+          console.log('[NonBrowserTool] 继续发送工具结果给后端...')
+          // 更新当前消息显示工具结果
+          streamMessages.value[messageIndex].blocks = [{
+            type: 'text',
+            text: `[工具执行结果]: ${toolResultContent.substring(0, 200)}${toolResultContent.length > 200 ? '...' : ''}`
+          }]
+          streamMessages.value[messageIndex].isComplete = true
+          nextTick(scrollToBottom)
+
+          // 继续发送工具结果给后端，让 AI 继续处理
+          await sendToolResultToBackend(toolId, toolResultContent)
+          return
+        }
+
         isStreaming.value = false
         streamMessages.value[messageIndex].blocks = []
 
@@ -1083,7 +1115,6 @@ const handleNonBrowserToolApproved = async (toolId: string) => {
         if (pendingToolCall) {
           streamMessages.value[messageIndex].blocks.push(pendingToolCall)
           streamMessages.value[messageIndex].isComplete = false
-          // 所有工具都需要用户确认，不自动执行
         } else {
           if (!currentThink && streamingContent.value) {
             streamMessages.value[messageIndex].blocks.push({ type: 'text', text: streamingContent.value })
@@ -1091,7 +1122,6 @@ const handleNonBrowserToolApproved = async (toolId: string) => {
           streamMessages.value[messageIndex].isComplete = true
         }
 
-        port.disconnect()
         nextTick(scrollToBottom)
       } else if (msg.type === 'error') {
         console.error('流式响应错误:', msg.error)
@@ -1120,6 +1150,122 @@ const handleNonBrowserToolApproved = async (toolId: string) => {
     })
   } catch (error) {
     console.error('处理工具响应失败:', error)
+    isStreaming.value = false
+  }
+}
+
+// 发送工具执行结果给后端，让 AI 继续处理
+const sendToolResultToBackend = async (toolId: string, result: string) => {
+  streamingContent.value = ''
+
+  const assistantMessage: ExtendedStreamMessage = {
+    sessionId: currentSessionId.value,
+    role: 'assistant',
+    blocks: [{ type: 'text', text: '' }],
+    createdAt: Date.now()
+  }
+  streamMessages.value.push(assistantMessage)
+  const messageIndex = streamMessages.value.length - 1
+
+  let currentThink = ''
+  let pendingToolCall: ToolUseBlock | null = null
+
+  try {
+    const port = chrome.runtime.connect({ name: 'chat-stream' })
+
+    port.onMessage.addListener((msg) => {
+      console.log('[SendToolResult] 收到消息:', msg)
+
+      if (msg.type === 'data') {
+        const data = msg.data
+        console.log('[SendToolResult] data 内容:', data)
+
+        if (data.content) {
+          streamingContent.value += data.content
+          const textBlock = streamMessages.value[messageIndex].blocks.find(b => b.type === 'text')
+          if (textBlock && textBlock.type === 'text') {
+            textBlock.text = streamingContent.value
+          }
+          nextTick(scrollToBottom)
+        }
+
+        if (data.think && data.think.reasoning_content) {
+          currentThink += data.think.reasoning_content
+        }
+
+        if (data.toolCall && data.toolCall.tool_name) {
+          try {
+            pendingToolCall = {
+              type: 'tool_use',
+              id: `tool_${Date.now()}`,
+              name: data.toolCall.tool_name,
+              input: JSON.parse(data.toolCall.arguments || '{}'),
+              status: 'pending'
+            }
+          } catch (e) {
+            console.error('解析工具参数失败:', e)
+          }
+        }
+
+        if (data.statistic && data.statistic.token_usage) {
+          tokenUsage.value = {
+            total: data.statistic.token_usage.total_tokens || 0,
+            prompt: data.statistic.token_usage.prompt_tokens || 0,
+            completion: data.statistic.token_usage.completion_tokens || 0
+          }
+        }
+      } else if (msg.type === 'done') {
+        console.log('[SendToolResult] 流式传输完成')
+        isStreaming.value = false
+        streamMessages.value[messageIndex].blocks = []
+
+        if (currentThink) {
+          streamMessages.value[messageIndex].think = currentThink
+        }
+
+        if (pendingToolCall) {
+          streamMessages.value[messageIndex].blocks.push(pendingToolCall)
+          streamMessages.value[messageIndex].isComplete = false
+        } else {
+          if (!currentThink && streamingContent.value) {
+            streamMessages.value[messageIndex].blocks.push({ type: 'text', text: streamingContent.value })
+          }
+          streamMessages.value[messageIndex].isComplete = true
+        }
+
+        port.disconnect()
+        nextTick(scrollToBottom)
+      } else if (msg.type === 'error') {
+        console.error('流式响应错误:', msg.error)
+        const textBlock = streamMessages.value[messageIndex].blocks.find(b => b.type === 'text')
+        if (textBlock && textBlock.type === 'text') {
+          textBlock.text = `错误: ${msg.error}`
+        }
+        isStreaming.value = false
+        port.disconnect()
+      }
+    })
+
+    const pageContext = await getPageContext()
+    const browserTools = browserToolService.getToolDefinitions()
+
+    // 发送工具执行结果，role 仍然是 function
+    port.postMessage({
+      agentId: selectedAgent.value?.id || '',
+      sessionId: currentSessionId.value,
+      message: JSON.stringify({
+        toolId,
+        approved: true,
+        result: result
+      }),
+      model: currentModel.value,
+      userId: 'default_user',
+      role: 'function',
+      currentPageInfo: pageContext,
+      browserTools: browserTools
+    })
+  } catch (error) {
+    console.error('发送工具结果失败:', error)
     isStreaming.value = false
   }
 }
