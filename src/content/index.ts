@@ -10,6 +10,124 @@ let currentSessionId: number | null = null
 let currentTabId: number | null = null
 let isPinned: boolean = false
 let styleElement: HTMLStyleElement | null = null
+let resizeHandle: HTMLDivElement | null = null
+let currentWidth: number = 480  // 默认宽度
+const MIN_WIDTH = 320
+const MAX_WIDTH = 800
+let isResizing = false
+
+// 更新布局样式
+function updateLayoutStyle(width: number) {
+  if (styleElement) {
+    styleElement.textContent = `
+      /* 核心：缩小 html 宽度，让页面内容自然收缩 */
+      html {
+        width: calc(100% - ${width}px) !important;
+        min-width: auto !important;
+        overflow-x: hidden !important;
+        position: relative !important;
+      }
+
+      /* 确保 body 跟随 html 宽度 */
+      body {
+        width: 100% !important;
+        min-width: auto !important;
+        max-width: 100% !important;
+        overflow-x: hidden !important;
+        position: relative !important;
+      }
+
+      /* 确保聊天容器不受影响，固定在视口右侧 */
+      #ai-chat-container {
+        position: fixed !important;
+        right: 0 !important;
+        top: 0 !important;
+        width: ${width}px !important;
+        height: 100vh !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        box-sizing: border-box !important;
+      }
+    `
+  }
+}
+
+// 设置拖拽事件处理
+function setupResizeHandlers() {
+  if (!resizeHandle) return
+
+  let startX = 0
+  let startWidth = 0
+
+  const onMouseDown = (e: MouseEvent) => {
+    e.preventDefault()
+    isResizing = true
+    startX = e.clientX
+    startWidth = currentWidth
+
+    // 添加遮罩层防止 iframe 捕获鼠标事件
+    const overlay = document.createElement('div')
+    overlay.id = 'ai-chat-resize-overlay'
+    overlay.style.cssText = `
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 2147483646;
+      cursor: ew-resize;
+    `
+    document.body.appendChild(overlay)
+
+    if (resizeHandle) {
+      resizeHandle.style.background = 'rgba(102, 126, 234, 0.5)'
+    }
+
+    document.addEventListener('mousemove', onMouseMove)
+    document.addEventListener('mouseup', onMouseUp)
+  }
+
+  const onMouseMove = (e: MouseEvent) => {
+    if (!isResizing) return
+
+    const deltaX = startX - e.clientX
+    let newWidth = startWidth + deltaX
+
+    // 限制宽度范围
+    newWidth = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, newWidth))
+    currentWidth = newWidth
+
+    // 更新容器宽度
+    if (chatContainer) {
+      chatContainer.style.width = `${newWidth}px`
+    }
+
+    // 更新页面布局
+    updateLayoutStyle(newWidth)
+  }
+
+  const onMouseUp = () => {
+    isResizing = false
+
+    // 移除遮罩层
+    const overlay = document.getElementById('ai-chat-resize-overlay')
+    if (overlay) {
+      overlay.remove()
+    }
+
+    if (resizeHandle) {
+      resizeHandle.style.background = 'transparent'
+    }
+
+    document.removeEventListener('mousemove', onMouseMove)
+    document.removeEventListener('mouseup', onMouseUp)
+
+    // 保存宽度到 storage
+    chrome.storage.local.set({ chatWidth: currentWidth })
+  }
+
+  resizeHandle.addEventListener('mousedown', onMouseDown)
+}
 
 // 获取当前页面信息
 function getPageInfo() {
@@ -99,7 +217,7 @@ function createChatFrame(sessionId: number) {
   chatContainer.id = 'ai-chat-container'
   chatContainer.style.cssText = `
     position: fixed;
-    width: 400px;
+    width: ${currentWidth}px;
     height: 100vh;
     right: 0;
     top: 0;
@@ -110,6 +228,27 @@ function createChatFrame(sessionId: number) {
     overflow: hidden;
   `
 
+  // 创建拖拽手柄
+  resizeHandle = document.createElement('div')
+  resizeHandle.id = 'ai-chat-resize-handle'
+  resizeHandle.style.cssText = `
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 6px;
+    height: 100%;
+    cursor: ew-resize;
+    background: transparent;
+    z-index: 2147483648;
+    transition: background 0.2s;
+  `
+  resizeHandle.addEventListener('mouseenter', () => {
+    if (resizeHandle) resizeHandle.style.background = 'rgba(102, 126, 234, 0.3)'
+  })
+  resizeHandle.addEventListener('mouseleave', () => {
+    if (resizeHandle && !isResizing) resizeHandle.style.background = 'transparent'
+  })
+
   chatFrame = document.createElement('iframe')
   chatFrame.src = chatUrl
   chatFrame.style.cssText = `
@@ -118,42 +257,17 @@ function createChatFrame(sessionId: number) {
     border: none;
   `
 
+  chatContainer.appendChild(resizeHandle)
   chatContainer.appendChild(chatFrame)
   document.body.appendChild(chatContainer)
+
+  // 设置拖拽事件
+  setupResizeHandlers()
 
   // 调整页面布局 - 将页面内容挤压到左侧
   styleElement = document.createElement('style')
   styleElement.id = 'ai-chat-layout-style'
-  styleElement.textContent = `
-    /* 核心：缩小 html 宽度，让页面内容自然收缩 */
-    html {
-      width: calc(100% - 400px) !important;
-      min-width: auto !important;
-      overflow-x: hidden !important;
-      position: relative !important;
-    }
-
-    /* 确保 body 跟随 html 宽度 */
-    body {
-      width: 100% !important;
-      min-width: auto !important;
-      max-width: 100% !important;
-      overflow-x: hidden !important;
-      position: relative !important;
-    }
-
-    /* 确保聊天容器不受影响，固定在视口右侧 */
-    #ai-chat-container {
-      position: fixed !important;
-      right: 0 !important;
-      top: 0 !important;
-      width: 400px !important;
-      height: 100vh !important;
-      margin: 0 !important;
-      padding: 0 !important;
-      box-sizing: border-box !important;
-    }
-  `
+  updateLayoutStyle(currentWidth)
   document.head.appendChild(styleElement)
 
   // 监听窗口大小变化，自动调整聊天容器高度
@@ -256,11 +370,18 @@ function closeChat() {
     chatContainer.remove()
     chatContainer = null
     chatFrame = null
+    resizeHandle = null
 
     // 移除样式
     if (styleElement) {
       styleElement.remove()
       styleElement = null
+    }
+
+    // 移除可能残留的遮罩层
+    const overlay = document.getElementById('ai-chat-resize-overlay')
+    if (overlay) {
+      overlay.remove()
     }
 
     // 如果不是固定状态，清除 storage
@@ -271,7 +392,12 @@ function closeChat() {
 }
 
 // 页面加载时检查是否有固定的聊天窗口
-chrome.storage.local.get(['chatPinned', 'chatSessionId'], (result) => {
+chrome.storage.local.get(['chatPinned', 'chatSessionId', 'chatWidth'], (result) => {
+  // 恢复保存的宽度
+  if (result.chatWidth) {
+    currentWidth = result.chatWidth
+  }
+
   if (result.chatPinned && result.chatSessionId) {
     isPinned = true
     currentSessionId = result.chatSessionId

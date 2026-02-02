@@ -180,29 +180,21 @@
       <!-- Token 使用统计栏 -->
       <div v-if="tokenUsage.total > 0 || isStreaming" class="token-stats-bar">
         <div class="token-stats-content">
-          <div class="token-stats-left">
-            <span class="token-label">Token 消耗</span>
-            <span class="token-value">{{ formatNumber(tokenUsage.total) }}</span>
+          <div class="token-stats-info">
+            <span class="token-used">已用 {{ formatNumber(tokenUsage.total) }}</span>
+            <span class="token-separator">/</span>
+            <span class="token-limit">{{ formatNumber(TOKEN_LIMIT) }}</span>
+            <span class="token-remaining" :class="{ warning: tokenUsagePercent > 80 }">
+              (剩余 {{ formatNumber(TOKEN_LIMIT - tokenUsage.total) }})
+            </span>
           </div>
-          <div class="token-stats-detail">
-            <div class="token-item">
-              <span class="token-item-label">输入</span>
-              <span class="token-item-value prompt">{{ formatNumber(tokenUsage.prompt) }}</span>
-            </div>
-            <div class="token-item">
-              <span class="token-item-label">输出</span>
-              <span class="token-item-value completion">{{ formatNumber(tokenUsage.completion) }}</span>
-            </div>
-          </div>
+          <span v-if="tokenUsagePercent > 80" class="token-warning-text">建议开启新会话</span>
         </div>
         <div class="token-progress-bar">
           <div
-            class="token-progress-prompt"
-            :style="{ width: tokenProgressPrompt + '%' }"
-          ></div>
-          <div
-            class="token-progress-completion"
-            :style="{ width: tokenProgressCompletion + '%' }"
+            class="token-progress-fill"
+            :class="{ warning: tokenUsagePercent > 80, danger: tokenUsagePercent > 95 }"
+            :style="{ width: Math.min(tokenUsagePercent, 100) + '%' }"
           ></div>
         </div>
       </div>
@@ -341,15 +333,12 @@ const tokenUsage = ref({
   completion: 0
 })
 
-// Token 进度条计算
-const tokenProgressPrompt = computed(() => {
-  if (tokenUsage.value.total === 0) return 0
-  return (tokenUsage.value.prompt / tokenUsage.value.total) * 100
-})
+// Token 上限（200K）
+const TOKEN_LIMIT = 200000
 
-const tokenProgressCompletion = computed(() => {
-  if (tokenUsage.value.total === 0) return 0
-  return (tokenUsage.value.completion / tokenUsage.value.total) * 100
+// Token 使用百分比
+const tokenUsagePercent = computed(() => {
+  return (tokenUsage.value.total / TOKEN_LIMIT) * 100
 })
 
 // 格式化数字
@@ -2596,52 +2585,43 @@ const createNewSession = async () => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: var(--space-2);
+  margin-bottom: var(--space-1);
 }
 
-.token-stats-left {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.token-label {
-  color: var(--text-tertiary);
-  font-weight: 500;
-}
-
-.token-value {
-  color: var(--text-primary);
-  font-weight: 600;
-  font-size: var(--text-sm);
-}
-
-.token-stats-detail {
-  display: flex;
-  gap: var(--space-4);
-}
-
-.token-item {
+.token-stats-info {
   display: flex;
   align-items: center;
   gap: var(--space-1);
-}
-
-.token-item-label {
-  color: var(--text-muted);
-}
-
-.token-item-value {
-  font-weight: 600;
   font-family: var(--font-mono);
 }
 
-.token-item-value.prompt {
-  color: var(--primary-500);
+.token-used {
+  color: var(--text-primary);
+  font-weight: 600;
 }
 
-.token-item-value.completion {
-  color: var(--success-500);
+.token-separator {
+  color: var(--text-muted);
+}
+
+.token-limit {
+  color: var(--text-tertiary);
+}
+
+.token-remaining {
+  color: var(--text-tertiary);
+  margin-left: var(--space-1);
+}
+
+.token-remaining.warning {
+  color: var(--warning-500);
+  font-weight: 500;
+}
+
+.token-warning-text {
+  color: var(--warning-500);
+  font-weight: 500;
+  font-size: var(--text-xs);
 }
 
 .token-progress-bar {
@@ -2649,19 +2629,20 @@ const createNewSession = async () => {
   background: var(--border-primary);
   border-radius: var(--radius-full);
   overflow: hidden;
-  display: flex;
 }
 
-.token-progress-prompt {
+.token-progress-fill {
   height: 100%;
   background: var(--primary-500);
   transition: width 0.3s ease;
 }
 
-.token-progress-completion {
-  height: 100%;
-  background: var(--success-500);
-  transition: width 0.3s ease;
+.token-progress-fill.warning {
+  background: var(--warning-500);
+}
+
+.token-progress-fill.danger {
+  background: var(--error-500);
 }
 </style>
 
