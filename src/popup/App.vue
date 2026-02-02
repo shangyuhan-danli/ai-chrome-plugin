@@ -76,8 +76,8 @@ const openChat = async () => {
     if (tab?.id) {
       try {
         await chrome.tabs.sendMessage(tab.id, {
-          type: 'OPEN_CHAT'
-          // 不传 sessionId，让 content script 自动获取或创建
+          type: 'OPEN_CHAT',
+          tabId: tab.id  // 传递 tabId 给 content script
         })
       } catch (e) {
         // Content script未注入，先注入再发送消息
@@ -93,7 +93,8 @@ const openChat = async () => {
         // 等待一下让content script初始化
         await new Promise(resolve => setTimeout(resolve, 100))
         await chrome.tabs.sendMessage(tab.id, {
-          type: 'OPEN_CHAT'
+          type: 'OPEN_CHAT',
+          tabId: tab.id  // 传递 tabId 给 content script
         })
       }
     }

@@ -20,14 +20,11 @@ function getPageInfo() {
 }
 
 // 获取或创建当前标签页的会话
-async function getOrCreateSessionForTab(): Promise<number> {
-  // 先获取当前标签页 ID
-  const tabs = await chrome.tabs.query({ active: true, currentWindow: true })
-  const tabId = tabs[0]?.id
+async function getOrCreateSessionForTab(tabId?: number): Promise<number> {
+  const pageInfo = getPageInfo()
 
   if (!tabId) {
     // 如果无法获取 tabId，创建一个基于时间戳的会话
-    const pageInfo = getPageInfo()
     const response = await chrome.runtime.sendMessage({
       type: 'CREATE_SESSION',
       payload: {
@@ -49,7 +46,6 @@ async function getOrCreateSessionForTab(): Promise<number> {
 
   if (existingSession.success && existingSession.data) {
     // 已有会话，更新页面信息
-    const pageInfo = getPageInfo()
     await chrome.runtime.sendMessage({
       type: 'UPDATE_SESSION',
       payload: {
@@ -64,7 +60,6 @@ async function getOrCreateSessionForTab(): Promise<number> {
   }
 
   // 没有会话，创建新会话
-  const pageInfo = getPageInfo()
   const response = await chrome.runtime.sendMessage({
     type: 'CREATE_SESSION',
     payload: {
@@ -304,8 +299,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       }
       sendResponse({ success: true })
     } else {
-      // 自动获取或创建当前标签页的会话
-      getOrCreateSessionForTab().then(sessionId => {
+      // 自动获取或创建当前标签页的会话，tabId 由 popup 传入
+      const tabId = message.tabId
+      getOrCreateSessionForTab(tabId).then(sessionId => {
         currentSessionId = sessionId
         if (chatContainer) {
           chatFrame!.src = chrome.runtime.getURL(`chat.html?sessionId=${sessionId}`)
