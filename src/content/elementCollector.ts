@@ -4,6 +4,18 @@ import type { PageElement, CompactElement, PageContext, FilterStrategy } from '.
 // 元素 ID 到 DOM 元素的映射
 const elementMap = new Map<string, HTMLElement>()
 
+// 调试：打印 elementMap 状态
+export function debugElementMap(): void {
+  console.log('[ElementCollector] elementMap 状态:')
+  console.log(`  - 元素数量: ${elementMap.size}`)
+  elementMap.forEach((el, id) => {
+    const tag = el.tagName.toLowerCase()
+    const text = el.textContent?.trim().substring(0, 30) || ''
+    const placeholder = (el as HTMLInputElement).placeholder || ''
+    console.log(`  - ${id}: <${tag}> text="${text}" placeholder="${placeholder}"`)
+  })
+}
+
 // 默认筛选策略
 const defaultStrategy: FilterStrategy = {
   priorities: {
@@ -182,6 +194,7 @@ function collectElementInfo(el: HTMLElement): PageElement | null {
 export function collectInteractiveElements(): PageElement[] {
   // 清空旧的映射
   elementMap.clear()
+  console.log('[ElementCollector] 开始采集元素，已清空 elementMap')
 
   const elements: PageElement[] = []
 
@@ -272,6 +285,8 @@ export function collectInteractiveElements(): PageElement[] {
     }
   })
 
+  console.log(`[ElementCollector] 采集完成，共 ${elements.length} 个元素，elementMap 大小: ${elementMap.size}`)
+
   return elements
 }
 
@@ -279,7 +294,12 @@ export function collectInteractiveElements(): PageElement[] {
  * 根据 ID 获取实际 DOM 元素
  */
 export function getElementById(id: string): HTMLElement | null {
-  return elementMap.get(id) || null
+  const el = elementMap.get(id)
+  console.log(`[ElementCollector] getElementById("${id}"):`, el ? `找到 <${el.tagName.toLowerCase()}>` : '未找到')
+  if (!el) {
+    console.log(`[ElementCollector] 当前 elementMap 中的所有 ID:`, Array.from(elementMap.keys()))
+  }
+  return el || null
 }
 
 /**

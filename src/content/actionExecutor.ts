@@ -46,11 +46,14 @@ function simulateClick(el: HTMLElement): void {
  * 填充输入框
  */
 async function fillInput(target: PageAction['target'], value?: string): Promise<ActionResult> {
+  console.log('[ActionExecutor] fillInput 调用:', { target, value })
+
   if (!value) {
     return { success: false, message: '未提供填充值', error: 'NO_VALUE' }
   }
 
   const el = target.elementId ? getElementById(target.elementId) : null
+  console.log('[ActionExecutor] 通过 elementId 查找结果:', el ? `<${el.tagName}>` : 'null')
 
   if (!el) {
     // 尝试使用 selector

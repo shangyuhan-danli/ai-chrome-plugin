@@ -472,7 +472,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   else if (message.type === 'GET_PAGE_CONTEXT') {
     // 获取页面上下文（包含可交互元素）
     const userMessage = message.payload?.userMessage || ''
+    console.log('[Content] GET_PAGE_CONTEXT 被调用，userMessage:', userMessage)
     const context = getPageContext(userMessage)
+    console.log('[Content] 返回的 context 元素数量:', context.elements?.length)
     sendResponse({ success: true, data: context })
   }
   else if (message.type === 'REQUEST_MORE_ELEMENTS') {
@@ -484,7 +486,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   else if (message.type === 'EXECUTE_PAGE_ACTION') {
     // 执行单个页面操作
     const action = message.payload as PageAction
+    console.log('[Content] EXECUTE_PAGE_ACTION 被调用:', JSON.stringify(action, null, 2))
     executeAction(action).then(result => {
+      console.log('[Content] EXECUTE_PAGE_ACTION 结果:', result)
       sendResponse({ success: result.success, data: result })
     })
     return true // 异步响应
@@ -492,7 +496,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   else if (message.type === 'EXECUTE_BATCH_ACTIONS') {
     // 批量执行页面操作
     const actions = message.payload as PageAction[]
+    console.log('[Content] EXECUTE_BATCH_ACTIONS 被调用，actions 数量:', actions.length)
     executeBatchActions(actions).then(result => {
+      console.log('[Content] EXECUTE_BATCH_ACTIONS 结果:', result)
       sendResponse({ success: result.success, data: result })
     })
     return true // 异步响应
