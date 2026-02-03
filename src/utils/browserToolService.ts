@@ -164,7 +164,7 @@ class BrowserToolService {
     // screenshot - 页面截图
     this.register({
       name: 'screenshot',
-      description: '截取当前页面的可见区域截图，保存到剪贴板并返回图片数据。用户可以直接粘贴使用。',
+      description: '截取当前页面的截图，支持可视区域截图或完整页面滚动截图，自动保存到剪贴板。用户可以直接粘贴使用。',
       parameters: {
         type: 'object',
         properties: {
@@ -184,40 +184,75 @@ class BrowserToolService {
           filename: {
             type: 'string',
             description: '下载文件名，默认screenshot_{timestamp}.png'
+          },
+          fullPage: {
+            type: 'boolean',
+            description: '是否截取完整页面（自动滚动截图），默认false（仅截取可视区域）'
           }
         }
       },
-      execute: async (args: { format?: 'png' | 'jpeg'; quality?: number; autoDownload?: boolean; filename?: string }, _tabId: number) => {
+      execute: async (args: { format?: 'png' | 'jpeg'; quality?: number; autoDownload?: boolean; filename?: string; fullPage?: boolean }, tabId: number) => {
         try {
-          const options: chrome.tabs.CaptureVisibleTabOptions = {
-            format: args.format || 'png'
-          }
-          if (args.format === 'jpeg' && args.quality) {
-            options.quality = args.quality
+          const format = args.format || 'png'
+          const isFullPage = args.fullPage || false
+          
+          let finalDataUrl: string
+          
+          if (isFullPage) {
+            // 全页截图：通过 content script 实现滚动截图
+            const response = await chrome.tabs.sendMessage(tabId, {
+              type: 'CAPTURE_FULL_PAGE',
+              payload: { format, quality: args.quality }
+            })
+            
+            if (!response?.success) {
+              return { success: false, error: response?.error || '全页截图失败' }
+            }
+            
+            finalDataUrl = response.data
+          } else {
+            // 可视区域截图
+            const options: chrome.tabs.CaptureVisibleTabOptions = { format }
+            if (format === 'jpeg' && args.quality) {
+              options.quality = args.quality
+            }
+            finalDataUrl = await chrome.tabs.captureVisibleTab(options)
           }
           
-          // 1. 截图 - 使用当前活动窗口
-          const dataUrl = await chrome.tabs.captureVisibleTab(options)
-          
-          // 2. 转换为 Blob 并保存到剪贴板
-          const response = await fetch(dataUrl)
+          // 转换为 Blob 并保存到剪贴板
+          const response = await fetch(finalDataUrl)
           const blob = await response.blob()
           
+          let clipboardSaved = false
+          let clipboardError = null
+          
           try {
+            // 尝试使用 ClipboardItem API 写入剪贴板
             await navigator.clipboard.write([
               new ClipboardItem({
                 [blob.type]: blob
               })
             ])
-          } catch (clipboardError) {
-            console.warn('保存到剪贴板失败:', clipboardError)
+            clipboardSaved = true
+          } catch (e1) {
+            // 如果 ClipboardItem 失败，尝试通过 content script 写入
+            try {
+              await chrome.tabs.sendMessage(tabId, {
+                type: 'COPY_IMAGE_TO_CLIPBOARD',
+                payload: { dataUrl: finalDataUrl }
+              })
+              clipboardSaved = true
+            } catch (e2) {
+              clipboardError = String(e2)
+              console.warn('保存到剪贴板失败:', e1, e2)
+            }
           }
           
-          // 3. 如果需要自动下载
+          // 如果需要自动下载
           if (args.autoDownload) {
-            const filename = args.filename || `screenshot_${Date.now()}.png`
+            const filename = args.filename || `screenshot_${Date.now()}.${format}`
             await chrome.downloads.download({
-              url: dataUrl,
+              url: finalDataUrl,
               filename: filename,
               saveAs: false
             })
@@ -225,10 +260,14 @@ class BrowserToolService {
           
           return { 
             success: true, 
-            data: dataUrl,
-            message: '截图已保存到剪贴板，你可以直接粘贴使用（Ctrl+V/Cmd+V）',
-            clipboardSaved: true,
-            autoDownload: args.autoDownload || false
+            data: finalDataUrl,
+            message: clipboardSaved 
+              ? '截图已保存到剪贴板，你可以直接粘贴使用（Ctrl+V/Cmd+V）'
+              : '截图已生成，但剪贴板保存失败，请手动保存图片',
+            clipboardSaved: clipboardSaved,
+            clipboardError: clipboardError,
+            autoDownload: args.autoDownload || false,
+            fullPage: isFullPage
           }
         } catch (e) {
           return { success: false, error: String(e) }

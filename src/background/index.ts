@@ -329,6 +329,20 @@ async function handleMessage(message: ChromeMessage, sender: chrome.runtime.Mess
         const intentResult = await apiService.recognizeIntent(payload.url)
         return { success: true, data: intentResult }
 
+      // 处理来自 content script 的截图请求
+      case 'CAPTURE_VISIBLE_TAB':
+        try {
+          const { format, quality } = payload || {}
+          const options: chrome.tabs.CaptureVisibleTabOptions = { format: format || 'png' }
+          if (format === 'jpeg' && quality) {
+            options.quality = quality
+          }
+          const dataUrl = await chrome.tabs.captureVisibleTab(options)
+          return { success: true, data: dataUrl }
+        } catch (error) {
+          return { success: false, error: String(error) }
+        }
+
       default:
         return { success: false, error: 'Unknown message type' }
     }

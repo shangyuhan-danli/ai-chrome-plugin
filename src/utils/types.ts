@@ -169,6 +169,8 @@ export type MessageType =
   | 'EXECUTE_BATCH_ACTIONS'
   | 'CLEAR_AI_STYLES'
   | 'GET_SELECTED_TEXT'
+  // 截图相关
+  | 'CAPTURE_VISIBLE_TAB'
 
 export interface ChromeMessage {
   type: MessageType

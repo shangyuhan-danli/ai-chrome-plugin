@@ -513,5 +513,166 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     const selectedText = window.getSelection()?.toString() || ''
     sendResponse({ success: true, data: selectedText })
   }
+  else if (message.type === 'CAPTURE_FULL_PAGE') {
+    // 全页截图
+    captureFullPage(message.payload).then(result => {
+      sendResponse(result)
+    })
+    return true // 异步响应
+  }
+  else if (message.type === 'COPY_IMAGE_TO_CLIPBOARD') {
+    // 复制图片到剪贴板
+    copyImageToClipboard(message.payload.dataUrl).then(result => {
+      sendResponse(result)
+    })
+    return true // 异步响应
+  }
   return true
 })
+
+/**
+ * 全页截图 - 通过滚动页面并分段截图，然后使用 Canvas 拼接成完整页面截图
+ */
+async function captureFullPage(payload: { format?: string; quality?: number }): Promise<{ success: boolean; data?: string; error?: string }> {
+  try {
+    const format = payload.format || 'png'
+    const quality = payload.quality || 90
+    
+    // 保存原始滚动位置
+    const originalScrollY = window.scrollY
+    const originalScrollX = window.scrollX
+    
+    // 获取页面完整尺寸
+    const fullHeight = Math.max(
+      document.body.scrollHeight,
+      document.body.offsetHeight,
+      document.documentElement.clientHeight,
+      document.documentElement.scrollHeight,
+      document.documentElement.offsetHeight
+    )
+    const fullWidth = Math.max(
+      document.body.scrollWidth,
+      document.body.offsetWidth,
+      document.documentElement.clientWidth,
+      document.documentElement.scrollWidth,
+      document.documentElement.offsetWidth
+    )
+    
+    // 获取视口尺寸
+    const viewportHeight = window.innerHeight
+    const viewportWidth = window.innerWidth
+    
+    // 如果页面不需要滚动，直接返回可视区域截图
+    if (fullHeight <= viewportHeight && fullWidth <= viewportWidth) {
+      // 请求 background 截图
+      const dataUrl = await requestScreenshot(format, quality)
+      return { success: true, data: dataUrl }
+    }
+    
+    // 计算需要截取的段数
+    const numY = Math.ceil(fullHeight / viewportHeight)
+    const numX = Math.ceil(fullWidth / viewportWidth)
+    
+    // 创建 Canvas 用于拼接
+    const canvas = document.createElement('canvas')
+    const ctx = canvas.getContext('2d')
+    if (!ctx) {
+      return { success: false, error: '无法创建 Canvas 上下文' }
+    }
+    
+    // 设置 Canvas 尺寸
+    canvas.width = Math.min(fullWidth, 16384) // 限制最大宽度
+    canvas.height = Math.min(fullHeight, 16384) // 限制最大高度
+    
+    // 分段截图并拼接
+    for (let y = 0; y < numY; y++) {
+      for (let x = 0; x < numX; x++) {
+        // 滚动到指定位置
+        const scrollX = x * viewportWidth
+        const scrollY = y * viewportHeight
+        window.scrollTo(scrollX, scrollY)
+        
+        // 等待渲染完成
+        await new Promise(resolve => setTimeout(resolve, 200))
+        
+        // 截图
+        const dataUrl = await requestScreenshot(format, quality)
+        
+        // 加载图片到 Canvas
+        await new Promise<void>((resolve, reject) => {
+          const img = new Image()
+          img.onload = () => {
+            // 计算绘制位置和裁剪区域
+            const drawX = scrollX
+            const drawY = scrollY
+            
+            // 计算实际绘制的宽度和高度（最后一段可能不完整）
+            const drawWidth = Math.min(viewportWidth, fullWidth - scrollX, canvas.width - drawX)
+            const drawHeight = Math.min(viewportHeight, fullHeight - scrollY, canvas.height - drawY)
+            
+            // 绘制到 Canvas
+            ctx.drawImage(
+              img,
+              0, 0, drawWidth, drawHeight, // 源裁剪
+              drawX, drawY, drawWidth, drawHeight // 目标位置
+            )
+            resolve()
+          }
+          img.onerror = reject
+          img.src = dataUrl
+        })
+      }
+    }
+    
+    // 恢复原始滚动位置
+    window.scrollTo(originalScrollX, originalScrollY)
+    
+    // 导出为 data URL
+    const mimeType = format === 'jpeg' ? 'image/jpeg' : 'image/png'
+    const finalDataUrl = canvas.toDataURL(mimeType, quality / 100)
+    
+    return { success: true, data: finalDataUrl }
+  } catch (error) {
+    console.error('全页截图失败:', error)
+    return { success: false, error: String(error) }
+  }
+}
+
+/**
+ * 请求 background 进行截图
+ */
+function requestScreenshot(format: string, quality: number): Promise<string> {
+  return new Promise((resolve, reject) => {
+    chrome.runtime.sendMessage(
+      { type: 'CAPTURE_VISIBLE_TAB', payload: { format, quality } },
+      (response) => {
+        if (response?.success && response.data) {
+          resolve(response.data)
+        } else {
+          reject(new Error(response?.error || '截图失败'))
+        }
+      }
+    )
+  })
+}
+
+/**
+ * 复制图片到剪贴板
+ */
+async function copyImageToClipboard(dataUrl: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    const response = await fetch(dataUrl)
+    const blob = await response.blob()
+    
+    await navigator.clipboard.write([
+      new ClipboardItem({
+        [blob.type]: blob
+      })
+    ])
+    
+    return { success: true }
+  } catch (error) {
+    console.error('复制到剪贴板失败:', error)
+    return { success: false, error: String(error) }
+  }
+}
