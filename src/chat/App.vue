@@ -1058,13 +1058,13 @@ const sendStreamMessage = async (content: string) => {
           }
 
           // 2. 如果有 tool_call，渲染工具调用块
-          if (lastCompleteMessage.tool_call && lastCompleteMessage.tool_call.tool_name) {
+          if (lastCompleteMessage.toolCall && lastCompleteMessage.toolCall.tool_name) {
             try {
               const toolBlock: ToolUseBlock = {
                 type: 'tool_use',
                 id: `tool_${Date.now()}`,
-                name: lastCompleteMessage.tool_call.tool_name,
-                input: JSON.parse(lastCompleteMessage.tool_call.arguments || '{}'),
+                name: lastCompleteMessage.toolCall.tool_name,
+                input: JSON.parse(lastCompleteMessage.toolCall.arguments || '{}'),
                 status: 'pending'
               }
               streamMessages.value[messageIndex].blocks.push(toolBlock)
