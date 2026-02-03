@@ -929,10 +929,8 @@ const sendStreamMessage = async (content: string) => {
   streamMessages.value.push(assistantMessage)
   const messageIndex = streamMessages.value.length - 1
 
-  let lastThink = ''
-  let lastToolCall: ToolUseBlock | null = null
-  let lastAnswer = ''
-  let lastQuestion = ''
+  // 存储最后一条完整消息，用于最终渲染
+  let lastCompleteMessage: any = null
 
   try {
     const port = chrome.runtime.connect({ name: 'chat-stream' })
@@ -945,6 +943,9 @@ const sendStreamMessage = async (content: string) => {
         const data = msg.data
         console.log('[Chat Stream] data 内容:', data)
 
+        // 存储每一条消息，最后一条用于最终渲染
+        lastCompleteMessage = data
+
         // 处理文本内容 - 流式过程中不断拼接显示
         if (data.content) {
           streamingContent.value += data.content
@@ -956,26 +957,6 @@ const sendStreamMessage = async (content: string) => {
           nextTick(scrollToBottom)
         }
 
-        // 收集思考内容 - 替换策略，取最后一次
-        if (data.think && data.think.reasoning_content) {
-          lastThink = data.think.reasoning_content
-        }
-
-        // 收集工具调用 - 替换策略，取最后一次
-        if (data.toolCall && data.toolCall.tool_name) {
-          try {
-            lastToolCall = {
-              type: 'tool_use',
-              id: `tool_${Date.now()}`,
-              name: data.toolCall.tool_name,
-              input: JSON.parse(data.toolCall.arguments || '{}'),
-              status: 'pending'
-            }
-          } catch (e) {
-            console.error('解析工具参数失败:', e)
-          }
-        }
-
         // 处理统计信息
         if (data.statistic && data.statistic.token_usage) {
           tokenUsage.value = {
@@ -984,56 +965,65 @@ const sendStreamMessage = async (content: string) => {
             completion: data.statistic.token_usage.completion_tokens || 0
           }
         }
-
-        // 收集任务完成总结
-        if (data.answer && data.answer.result) {
-          lastAnswer = data.answer.result
-        }
-
-        // 收集AI提问
-        if (data.ask && data.ask.question) {
-          lastQuestion = data.ask.question
-          console.log('[Chat Stream] 收到 ask:', lastQuestion)
-        }
       } else if (msg.type === 'done') {
-        console.log('[Chat Stream] 流式传输完成, lastThink:', !!lastThink, 'lastToolCall:', !!lastToolCall, 'lastAnswer:', !!lastAnswer, 'lastQuestion:', !!lastQuestion)
-        // 流式传输完成 - 用 think 和 tool_call 替换原始 content 显示
+        console.log('[Chat Stream] 流式传输完成, lastCompleteMessage:', lastCompleteMessage)
         isStreaming.value = false
 
-        // 清空 blocks，重新构建
+        // 清空 blocks，基于最后一条消息进行定制化渲染
         streamMessages.value[messageIndex].blocks = []
 
-        // 如果有思考内容，添加 think
-        if (lastThink) {
-          streamMessages.value[messageIndex].think = lastThink
-        }
+        if (lastCompleteMessage) {
+          // 1. 如果有 think，显示 think.reasoning_content
+          if (lastCompleteMessage.think && lastCompleteMessage.think.reasoning_content) {
+            streamMessages.value[messageIndex].think = lastCompleteMessage.think.reasoning_content
+          }
 
-        // 如果有工具调用，添加 tool_call 块
-        if (lastToolCall) {
-          streamMessages.value[messageIndex].blocks.push(lastToolCall)
-          streamMessages.value[messageIndex].isComplete = false
-          // 所有工具都需要用户确认，不自动执行
+          // 2. 如果有 tool_call，渲染工具调用块
+          if (lastCompleteMessage.tool_call && lastCompleteMessage.tool_call.tool_name) {
+            try {
+              const toolBlock: ToolUseBlock = {
+                type: 'tool_use',
+                id: `tool_${Date.now()}`,
+                name: lastCompleteMessage.tool_call.tool_name,
+                input: JSON.parse(lastCompleteMessage.tool_call.arguments || '{}'),
+                status: 'pending'
+              }
+              streamMessages.value[messageIndex].blocks.push(toolBlock)
+              streamMessages.value[messageIndex].isComplete = false
+            } catch (e) {
+              console.error('解析工具参数失败:', e)
+            }
+          }
+          // 3. 如果有 answer，显示 answer.result
+          else if (lastCompleteMessage.answer && lastCompleteMessage.answer.result) {
+            streamMessages.value[messageIndex].blocks.push({
+              type: 'summary',
+              text: lastCompleteMessage.answer.result
+            })
+            streamMessages.value[messageIndex].isComplete = true
+          }
+          // 4. 如果有 ask，显示 ask.question
+          else if (lastCompleteMessage.ask && lastCompleteMessage.ask.question) {
+            streamMessages.value[messageIndex].blocks.push({
+              type: 'question',
+              text: lastCompleteMessage.ask.question
+            })
+            streamMessages.value[messageIndex].isComplete = true
+          }
+          // 5. 否则显示普通文本（如果没有 think）
+          else if (!lastCompleteMessage.think && streamingContent.value) {
+            streamMessages.value[messageIndex].blocks.push({ type: 'text', text: streamingContent.value })
+            streamMessages.value[messageIndex].isComplete = true
+          }
+          // 6. 只有 think 没有其他内容
+          else {
+            streamMessages.value[messageIndex].isComplete = true
+          }
         } else {
-          // 判断是否有特殊内容块（answer 或 question）
-          const hasSpecialBlocks = lastAnswer || lastQuestion
-
-          // 如果有特殊内容块，不显示原始 content（因为 content 包含未解析的原始格式）
-          // 如果没有特殊内容块且没有 think，才显示普通文本
-          if (!hasSpecialBlocks && !lastThink && streamingContent.value) {
+          // 没有收到任何消息，显示原始内容
+          if (streamingContent.value) {
             streamMessages.value[messageIndex].blocks.push({ type: 'text', text: streamingContent.value })
           }
-          streamMessages.value[messageIndex].isComplete = true
-        }
-
-        // 如果有任务完成总结，添加 summary 块
-        if (lastAnswer) {
-          streamMessages.value[messageIndex].blocks.push({ type: 'summary', text: lastAnswer })
-          streamMessages.value[messageIndex].isComplete = true
-        }
-
-        // 如果有AI提问，添加 question 块
-        if (lastQuestion) {
-          streamMessages.value[messageIndex].blocks.push({ type: 'question', text: lastQuestion })
           streamMessages.value[messageIndex].isComplete = true
         }
 
