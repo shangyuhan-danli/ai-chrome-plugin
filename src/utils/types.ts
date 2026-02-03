@@ -40,12 +40,18 @@ export interface Statistic {
   token_usage: TokenUsage
 }
 
+// 流式API响应 - 任务完成答案
+export interface AnswerContent {
+  result: string
+}
+
 // 流式API响应 - 标准消息
 export interface StreamResponse {
   role?: string
   content?: string
   think?: ThinkContent
   tool_call?: ToolCallContent
+  answer?: AnswerContent
   statistic?: Statistic
   // 结束消息
   message?: string
@@ -53,7 +59,7 @@ export interface StreamResponse {
 }
 
 // 流式输出内容块类型
-export type ContentBlockType = 'text' | 'tool_use'
+export type ContentBlockType = 'text' | 'tool_use' | 'summary'
 
 // 文本内容块
 export interface TextBlock {
@@ -70,8 +76,14 @@ export interface ToolUseBlock {
   status?: 'pending' | 'approved' | 'rejected'
 }
 
+// 总结内容块
+export interface SummaryBlock {
+  type: 'summary'
+  text: string
+}
+
 // 内容块联合类型
-export type ContentBlock = TextBlock | ToolUseBlock
+export type ContentBlock = TextBlock | ToolUseBlock | SummaryBlock
 
 // 流式消息（包含多个内容块）
 export interface StreamMessage {

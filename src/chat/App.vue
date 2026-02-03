@@ -161,6 +161,15 @@
                   <button class="btn btn-reject" @click="handleToolResponse(block.id, false)">Reject</button>
                 </div>
               </div>
+
+              <!-- 任务完成总结块 -->
+              <div v-else-if="block.type === 'summary'" class="summary-block">
+                <div class="summary-header">
+                  <span class="summary-icon">✅</span>
+                  <span class="summary-label">任务完成</span>
+                </div>
+                <div class="summary-content">{{ block.text }}</div>
+              </div>
             </template>
           </div>
           <span class="message-time">{{ formatTime(msg.createdAt) }}</span>
@@ -811,6 +820,7 @@ const sendStreamMessage = async (content: string) => {
 
   let lastThink = ''
   let lastToolCall: ToolUseBlock | null = null
+  let lastAnswer = ''
 
   try {
     const port = chrome.runtime.connect({ name: 'chat-stream' })
@@ -862,6 +872,11 @@ const sendStreamMessage = async (content: string) => {
             completion: data.statistic.token_usage.completion_tokens || 0
           }
         }
+
+        // 收集任务完成总结
+        if (data.answer && data.answer.result) {
+          lastAnswer = data.answer.result
+        }
       } else if (msg.type === 'done') {
         console.log('[Chat Stream] 流式传输完成')
         // 流式传输完成 - 用 think 和 tool_call 替换原始 content 显示
@@ -885,6 +900,12 @@ const sendStreamMessage = async (content: string) => {
           if (!lastThink && streamingContent.value) {
             streamMessages.value[messageIndex].blocks.push({ type: 'text', text: streamingContent.value })
           }
+          streamMessages.value[messageIndex].isComplete = true
+        }
+
+        // 如果有任务完成总结，添加 summary 块
+        if (lastAnswer) {
+          streamMessages.value[messageIndex].blocks.push({ type: 'summary', text: lastAnswer })
           streamMessages.value[messageIndex].isComplete = true
         }
 
@@ -1690,6 +1711,66 @@ const createNewSession = async () => {
 
 .tool-indicator {
   color: #f59e0b;
+}
+
+/* 任务完成总结块样式 */
+.summary-block {
+  background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%);
+  border: 1px solid #10b981;
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+  font-size: var(--text-base);
+  margin-top: var(--space-2);
+  transition: all var(--transition-base);
+  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.15);
+}
+
+.summary-block:hover {
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.25);
+  border-color: #059669;
+}
+
+.summary-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.summary-icon {
+  font-size: var(--text-lg);
+}
+
+.summary-label {
+  font-weight: 700;
+  color: #059669;
+  font-size: var(--text-sm);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.summary-content {
+  color: #065f46;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-weight: 500;
+}
+
+/* 暗色模式下的总结块样式 */
+@media (prefers-color-scheme: dark) {
+  .summary-block {
+    background: linear-gradient(135deg, #064e3b 0%, #065f46 100%);
+    border-color: #10b981;
+  }
+
+  .summary-label {
+    color: #34d399;
+  }
+
+  .summary-content {
+    color: #a7f3d0;
+  }
 }
 
 /* 工具块样式 */
