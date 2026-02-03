@@ -845,10 +845,19 @@ const sendBrowserToolResultAsUser = async (toolName: string, result: string, res
 }
 
 const sendMessage = async () => {
-  if (!inputMessage.value.trim() || isLoading.value || isStreaming.value || waitingForToolResponse.value) return
+  if (!inputMessage.value.trim() || isLoading.value || isStreaming.value) return
 
-  const content = inputMessage.value.trim()
+  let content = inputMessage.value.trim()
   inputMessage.value = ''
+
+  // 检查是否有待确认的工具调用，如果有则自动拒绝
+  const pendingToolInfo = getPendingToolInfo()
+  if (pendingToolInfo) {
+    // 标记工具为已拒绝
+    markPendingToolAsRejected()
+    // 在消息前追加拒绝说明
+    content = `[用户拒绝了工具 "${pendingToolInfo.toolName}" 的执行，并发送了新指令]\n\n${content}`
+  }
 
   // 添加用户消息
   const userMessage: StreamMessage = {
@@ -868,6 +877,41 @@ const sendMessage = async () => {
     // 使用原有的非流式方式
     await sendNonStreamMessage(content)
   }
+}
+
+/**
+ * 获取待确认的工具信息
+ */
+const getPendingToolInfo = (): { toolName: string; toolId: string } | null => {
+  if (streamMessages.value.length === 0) return null
+  const lastMsg = streamMessages.value[streamMessages.value.length - 1]
+  if (lastMsg.role !== 'assistant') return null
+
+  const pendingBlock = lastMsg.blocks.find(
+    (block) => block.type === 'tool_use' && (block as ToolUseBlock).status === 'pending'
+  ) as ToolUseBlock | undefined
+
+  if (pendingBlock) {
+    return { toolName: pendingBlock.name, toolId: pendingBlock.id }
+  }
+  return null
+}
+
+/**
+ * 将待确认的工具标记为已拒绝
+ */
+const markPendingToolAsRejected = () => {
+  if (streamMessages.value.length === 0) return
+  const lastMsg = streamMessages.value[streamMessages.value.length - 1]
+  if (lastMsg.role !== 'assistant') return
+
+  lastMsg.blocks.forEach((block) => {
+    if (block.type === 'tool_use' && (block as ToolUseBlock).status === 'pending') {
+      (block as ToolUseBlock).status = 'rejected'
+    }
+  })
+  // 标记消息为完成状态
+  ;(lastMsg as ExtendedStreamMessage).isComplete = true
 }
 
 // 流式发送消息
@@ -949,9 +993,10 @@ const sendStreamMessage = async (content: string) => {
         // 收集AI提问
         if (data.ask && data.ask.question) {
           lastQuestion = data.ask.question
+          console.log('[Chat Stream] 收到 ask:', lastQuestion)
         }
       } else if (msg.type === 'done') {
-        console.log('[Chat Stream] 流式传输完成')
+        console.log('[Chat Stream] 流式传输完成, lastThink:', !!lastThink, 'lastToolCall:', !!lastToolCall, 'lastAnswer:', !!lastAnswer, 'lastQuestion:', !!lastQuestion)
         // 流式传输完成 - 用 think 和 tool_call 替换原始 content 显示
         isStreaming.value = false
 
@@ -969,9 +1014,21 @@ const sendStreamMessage = async (content: string) => {
           streamMessages.value[messageIndex].isComplete = false
           // 所有工具都需要用户确认，不自动执行
         } else {
-          // 没有工具调用，保留文本内容（如果没有 think 和 tool_call，说明是普通回复）
-          if (!lastThink && streamingContent.value) {
-            streamMessages.value[messageIndex].blocks.push({ type: 'text', text: streamingContent.value })
+          // 计算需要从 streamingContent 中排除的特殊内容
+          let textContent = streamingContent.value
+
+          // 如果有 answer 或 question，它们可能被包含在 streamingContent 中
+          // 需要将它们分离出来单独显示
+          if (lastAnswer && textContent.includes(lastAnswer)) {
+            textContent = textContent.replace(lastAnswer, '').trim()
+          }
+          if (lastQuestion && textContent.includes(lastQuestion)) {
+            textContent = textContent.replace(lastQuestion, '').trim()
+          }
+
+          // 添加普通文本内容（排除 think、answer、question 后的内容）
+          if (textContent && !lastThink) {
+            streamMessages.value[messageIndex].blocks.push({ type: 'text', text: textContent })
           }
           streamMessages.value[messageIndex].isComplete = true
         }
@@ -2988,7 +3045,7 @@ const cancelDelete = () => {
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 1000;
+  z-index: 2147483647;
 }
 
 .modal-dialog {

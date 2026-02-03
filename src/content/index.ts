@@ -11,9 +11,9 @@ let currentTabId: number | null = null
 let isPinned: boolean = false
 let styleElement: HTMLStyleElement | null = null
 let resizeHandle: HTMLDivElement | null = null
-let currentWidth: number = 480  // 默认宽度
+let currentWidth: number = 520  // 默认宽度
 const MIN_WIDTH = 320
-const MAX_WIDTH = 800
+const MAX_WIDTH = 1000
 let isResizing = false
 
 // 更新布局样式
