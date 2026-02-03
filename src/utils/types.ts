@@ -45,6 +45,11 @@ export interface AnswerContent {
   result: string
 }
 
+// 流式API响应 - 向用户提问
+export interface AskContent {
+  question: string
+}
+
 // 流式API响应 - 标准消息
 export interface StreamResponse {
   role?: string
@@ -52,6 +57,7 @@ export interface StreamResponse {
   think?: ThinkContent
   tool_call?: ToolCallContent
   answer?: AnswerContent
+  ask?: AskContent
   statistic?: Statistic
   // 结束消息
   message?: string
@@ -59,7 +65,7 @@ export interface StreamResponse {
 }
 
 // 流式输出内容块类型
-export type ContentBlockType = 'text' | 'tool_use' | 'summary'
+export type ContentBlockType = 'text' | 'tool_use' | 'summary' | 'question'
 
 // 文本内容块
 export interface TextBlock {
@@ -82,8 +88,14 @@ export interface SummaryBlock {
   text: string
 }
 
+// 提问内容块
+export interface QuestionBlock {
+  type: 'question'
+  text: string
+}
+
 // 内容块联合类型
-export type ContentBlock = TextBlock | ToolUseBlock | SummaryBlock
+export type ContentBlock = TextBlock | ToolUseBlock | SummaryBlock | QuestionBlock
 
 // 流式消息（包含多个内容块）
 export interface StreamMessage {

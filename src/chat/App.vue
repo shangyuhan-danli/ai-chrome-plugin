@@ -227,6 +227,16 @@
                 </div>
                 <div class="summary-content">{{ block.text }}</div>
               </div>
+
+              <!-- AI提问块 -->
+              <div v-else-if="block.type === 'question'" class="question-block">
+                <div class="question-header">
+                  <span class="question-icon">❓</span>
+                  <span class="question-label">AI 想问你</span>
+                </div>
+                <div class="question-content">{{ block.text }}</div>
+                <div class="question-hint">请在下方输入框回复</div>
+              </div>
             </template>
           </div>
           <span class="message-time">{{ formatTime(msg.createdAt) }}</span>
@@ -878,6 +888,7 @@ const sendStreamMessage = async (content: string) => {
   let lastThink = ''
   let lastToolCall: ToolUseBlock | null = null
   let lastAnswer = ''
+  let lastQuestion = ''
 
   try {
     const port = chrome.runtime.connect({ name: 'chat-stream' })
@@ -934,6 +945,11 @@ const sendStreamMessage = async (content: string) => {
         if (data.answer && data.answer.result) {
           lastAnswer = data.answer.result
         }
+
+        // 收集AI提问
+        if (data.ask && data.ask.question) {
+          lastQuestion = data.ask.question
+        }
       } else if (msg.type === 'done') {
         console.log('[Chat Stream] 流式传输完成')
         // 流式传输完成 - 用 think 和 tool_call 替换原始 content 显示
@@ -963,6 +979,12 @@ const sendStreamMessage = async (content: string) => {
         // 如果有任务完成总结，添加 summary 块
         if (lastAnswer) {
           streamMessages.value[messageIndex].blocks.push({ type: 'summary', text: lastAnswer })
+          streamMessages.value[messageIndex].isComplete = true
+        }
+
+        // 如果有AI提问，添加 question 块
+        if (lastQuestion) {
+          streamMessages.value[messageIndex].blocks.push({ type: 'question', text: lastQuestion })
           streamMessages.value[messageIndex].isComplete = true
         }
 
@@ -1951,6 +1973,87 @@ const cancelDelete = () => {
 
   .summary-content {
     color: #a7f3d0;
+  }
+}
+
+/* AI提问块样式 */
+.question-block {
+  background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+  border: 1px solid #3b82f6;
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+  font-size: var(--text-base);
+  margin-top: var(--space-2);
+  transition: all var(--transition-base);
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.15);
+}
+
+.question-block:hover {
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.25);
+  border-color: #2563eb;
+}
+
+.question-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.question-icon {
+  font-size: var(--text-lg);
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.1); }
+}
+
+.question-label {
+  font-weight: 700;
+  color: #2563eb;
+  font-size: var(--text-sm);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.question-content {
+  color: #1e40af;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-weight: 500;
+  font-size: var(--text-md);
+  padding: var(--space-2) 0;
+}
+
+.question-hint {
+  font-size: var(--text-xs);
+  color: #6b7280;
+  margin-top: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: 1px dashed #93c5fd;
+}
+
+/* 暗色模式下的提问块样式 */
+@media (prefers-color-scheme: dark) {
+  .question-block {
+    background: linear-gradient(135deg, #1e3a5f 0%, #1e40af 100%);
+    border-color: #3b82f6;
+  }
+
+  .question-label {
+    color: #60a5fa;
+  }
+
+  .question-content {
+    color: #bfdbfe;
+  }
+
+  .question-hint {
+    color: #9ca3af;
+    border-top-color: #3b82f6;
   }
 }
 

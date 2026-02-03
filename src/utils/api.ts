@@ -1,5 +1,5 @@
 // API 服务层 - 对接后台服务
-import type { StreamResponse, ThinkContent, ToolCallContent, Statistic, AnswerContent } from './types'
+import type { StreamResponse, ThinkContent, ToolCallContent, Statistic, AnswerContent, AskContent } from './types'
 import type { PageContext } from './pageActionTypes'
 import type { BrowserToolDefinition } from './browserToolService'
 
@@ -30,6 +30,7 @@ export interface StreamCallbackData {
   think?: ThinkContent
   toolCall?: ToolCallContent
   answer?: AnswerContent
+  ask?: AskContent
   statistic?: Statistic
 }
 
@@ -210,6 +211,9 @@ export class ApiService {
             if (data.answer) {
               callbackData.answer = data.answer
             }
+            if (data.ask) {
+              callbackData.ask = data.ask
+            }
             if (data.statistic) {
               callbackData.statistic = data.statistic
             }
@@ -255,6 +259,7 @@ export class ApiService {
             if (data.think) callbackData.think = data.think
             if (data.tool_call) callbackData.toolCall = data.tool_call
             if (data.answer) callbackData.answer = data.answer
+            if (data.ask) callbackData.ask = data.ask
             if (data.statistic) callbackData.statistic = data.statistic
 
             if (Object.keys(callbackData).length > 0) {
