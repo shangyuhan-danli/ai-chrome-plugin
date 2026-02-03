@@ -829,6 +829,7 @@ const sendBrowserToolResultAsUser = async (toolName: string, result: string, res
 
   let currentThink = ''
   let pendingToolCall: ToolUseBlock | null = null
+  let lastCompleteMessage: any = null
 
   try {
     // 获取最新的页面上下文
@@ -839,6 +840,7 @@ const sendBrowserToolResultAsUser = async (toolName: string, result: string, res
     port.onMessage.addListener(async (msg) => {
       if (msg.type === 'data') {
         const data = msg.data
+        lastCompleteMessage = data
 
         if (data.content) {
           streamingContent.value += data.content
@@ -886,6 +888,18 @@ const sendBrowserToolResultAsUser = async (toolName: string, result: string, res
           streamMessages.value[messageIndex].blocks.push(pendingToolCall)
           streamMessages.value[messageIndex].isComplete = false
           // 所有工具都需要用户确认，不自动执行
+        } else if (lastCompleteMessage?.answer?.result) {
+          streamMessages.value[messageIndex].blocks.push({
+            type: 'summary',
+            text: lastCompleteMessage.answer.result
+          })
+          streamMessages.value[messageIndex].isComplete = true
+        } else if (lastCompleteMessage?.ask?.question) {
+          streamMessages.value[messageIndex].blocks.push({
+            type: 'question',
+            text: lastCompleteMessage.ask.question
+          })
+          streamMessages.value[messageIndex].isComplete = true
         } else {
           if (streamingContent.value) {
             streamMessages.value[messageIndex].blocks.push({ type: 'text', text: streamingContent.value })
@@ -1244,6 +1258,7 @@ const handleNonBrowserToolApproved = async (toolId: string) => {
   let currentThink = ''
   let pendingToolCall: ToolUseBlock | null = null
   let toolResultContent = ''  // 收集工具执行结果
+  let lastCompleteMessage: any = null
 
   try {
     const port = chrome.runtime.connect({ name: 'chat-stream' })
@@ -1253,6 +1268,8 @@ const handleNonBrowserToolApproved = async (toolId: string) => {
 
       if (msg.type === 'data') {
         const data = msg.data
+        lastCompleteMessage = data
+
         console.log('[NonBrowserTool] data 内容:', JSON.stringify(data))
 
         // 检查是否是工具执行结果（role=tool）
@@ -1334,6 +1351,18 @@ const handleNonBrowserToolApproved = async (toolId: string) => {
         if (pendingToolCall) {
           streamMessages.value[messageIndex].blocks.push(pendingToolCall)
           streamMessages.value[messageIndex].isComplete = false
+        } else if (lastCompleteMessage?.answer?.result) {
+          streamMessages.value[messageIndex].blocks.push({
+            type: 'summary',
+            text: lastCompleteMessage.answer.result
+          })
+          streamMessages.value[messageIndex].isComplete = true
+        } else if (lastCompleteMessage?.ask?.question) {
+          streamMessages.value[messageIndex].blocks.push({
+            type: 'question',
+            text: lastCompleteMessage.ask.question
+          })
+          streamMessages.value[messageIndex].isComplete = true
         } else {
           if (!currentThink && streamingContent.value) {
             streamMessages.value[messageIndex].blocks.push({ type: 'text', text: streamingContent.value })
@@ -1388,6 +1417,7 @@ const sendToolResultToBackend = async (toolId: string, result: string) => {
 
   let currentThink = ''
   let pendingToolCall: ToolUseBlock | null = null
+  let lastCompleteMessage: any = null
 
   try {
     const port = chrome.runtime.connect({ name: 'chat-stream' })
@@ -1397,6 +1427,7 @@ const sendToolResultToBackend = async (toolId: string, result: string) => {
 
       if (msg.type === 'data') {
         const data = msg.data
+        lastCompleteMessage = data
         console.log('[SendToolResult] data 内容:', data)
 
         if (data.content) {
@@ -1445,6 +1476,18 @@ const sendToolResultToBackend = async (toolId: string, result: string) => {
         if (pendingToolCall) {
           streamMessages.value[messageIndex].blocks.push(pendingToolCall)
           streamMessages.value[messageIndex].isComplete = false
+        } else if (lastCompleteMessage?.answer?.result) {
+          streamMessages.value[messageIndex].blocks.push({
+            type: 'summary',
+            text: lastCompleteMessage.answer.result
+          })
+          streamMessages.value[messageIndex].isComplete = true
+        } else if (lastCompleteMessage?.ask?.question) {
+          streamMessages.value[messageIndex].blocks.push({
+            type: 'question',
+            text: lastCompleteMessage.ask.question
+          })
+          streamMessages.value[messageIndex].isComplete = true
         } else {
           if (!currentThink && streamingContent.value) {
             streamMessages.value[messageIndex].blocks.push({ type: 'text', text: streamingContent.value })

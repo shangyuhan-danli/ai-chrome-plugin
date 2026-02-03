@@ -67,6 +67,25 @@
                     <button class="btn btn-reject" @click="handleToolResponse(block.id, false)">Reject</button>
                   </div>
                 </div>
+
+                <!-- 任务完成总结块 -->
+                <div v-else-if="block.type === 'summary'" class="summary-block">
+                  <div class="summary-header">
+                    <span class="summary-icon">✅</span>
+                    <span class="summary-label">任务完成</span>
+                  </div>
+                  <div class="summary-content">{{ block.text }}</div>
+                </div>
+
+                <!-- AI提问块 -->
+                <div v-else-if="block.type === 'question'" class="question-block">
+                  <div class="question-header">
+                    <span class="question-icon">❓</span>
+                    <span class="question-label">AI 想问你</span>
+                  </div>
+                  <div class="question-content">{{ block.text }}</div>
+                  <div class="question-hint">请在下方输入框回复</div>
+                </div>
               </template>
             </div>
           </template>
@@ -875,6 +894,101 @@ const stopDrag = () => {
 
 .bubble.typing span:nth-child(3) {
   animation-delay: 0.3s;
+}
+
+/* 任务完成总结块 */
+.summary-block {
+  background: linear-gradient(135deg, #ecfdf5, #d1fae5);
+  border: 1px solid #10b981;
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+  margin: var(--space-2) 0;
+  transition: all var(--transition-base);
+}
+
+.summary-block:hover {
+  box-shadow: 0 4px 12px #10b98140;
+  border-color: #059669;
+}
+
+.summary-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.summary-icon {
+  font-size: var(--text-lg);
+}
+
+.summary-label {
+  font-weight: 700;
+  color: #059669;
+  font-size: var(--text-sm);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.summary-content {
+  color: #065f46;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-weight: 500;
+}
+
+/* AI提问块 */
+.question-block {
+  background: linear-gradient(135deg, #eff6ff, #dbeafe);
+  border: 1px solid #3b82f6;
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+  margin: var(--space-2) 0;
+  transition: all var(--transition-base);
+}
+
+.question-block:hover {
+  box-shadow: 0 4px 12px #3b82f640;
+  border-color: #2563eb;
+}
+
+.question-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.question-icon {
+  font-size: var(--text-lg);
+  animation: pulse 2s ease-in-out infinite;
+}
+
+.question-label {
+  font-weight: 700;
+  color: #2563eb;
+  font-size: var(--text-sm);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.question-content {
+  color: #1e40af;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-weight: 500;
+  font-size: var(--text-md);
+  padding: var(--space-2) 0;
+}
+
+.question-hint {
+  font-size: var(--text-xs);
+  color: #6b7280;
+  margin-top: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: 1px dashed #93c5fd;
 }
 
 /* 输入区 */
