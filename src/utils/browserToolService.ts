@@ -65,8 +65,8 @@ class BrowserToolService {
               properties: {
                 action: {
                   type: 'string',
-                  enum: ['fill', 'click', 'doubleClick', 'rightClick', 'highlight', 'underline', 'select', 'selectText', 'check', 'scroll', 'read', 'hover', 'type', 'press', 'drag', 'wait', 'focus', 'blur', 'clear', 'getAttribute', 'getProperty', 'navigate', 'scrollIntoView', 'switchFrame', 'handleDialog', 'setLocalStorage', 'getLocalStorage', 'clearLocalStorage', 'setCookie', 'getCookie', 'clearCookies', 'copyToClipboard', 'pasteFromClipboard', 'upload', 'evaluate'],
-                  description: '操作类型: fill(填充), click(点击), doubleClick(双击), rightClick(右键), highlight(高亮), underline(下划线), select(选择), selectText(选中文本), check(勾选), scroll(滚动), read(读取), hover(悬停), type(打字), press(按键), drag(拖拽), wait(等待), focus(聚焦), blur(失焦), clear(清空), getAttribute(获取属性), getProperty(获取属性值), navigate(导航), scrollIntoView(滚动到元素), switchFrame(切换iframe), handleDialog(处理弹窗), setLocalStorage(设置存储), getLocalStorage(获取存储), clearLocalStorage(清除存储), setCookie(设置Cookie), getCookie(获取Cookie), clearCookies(清除Cookies), copyToClipboard(复制), pasteFromClipboard(粘贴), upload(上传文件), evaluate(执行JS)'
+                  enum: ['fill', 'click', 'doubleClick', 'rightClick', 'highlight', 'underline', 'select', 'selectText', 'check', 'scroll', 'read', 'hover', 'type', 'press', 'drag', 'wait', 'focus', 'blur', 'clear', 'getAttribute', 'getProperty', 'navigate', 'scrollIntoView', 'switchFrame', 'handleDialog', 'setLocalStorage', 'getLocalStorage', 'clearLocalStorage', 'setCookie', 'getCookie', 'clearCookies', 'copyToClipboard', 'pasteFromClipboard', 'upload', 'evaluate', 'addListItem', 'removeListItem', 'editListItem', 'setContent', 'appendContent', 'prependContent', 'insertHTML'],
+                  description: '操作类型: fill(填充输入框), click(点击), doubleClick(双击), rightClick(右键), highlight(高亮), underline(下划线), select(选择), selectText(选中文本), check(勾选), scroll(滚动), read(读取), hover(悬停), type(打字), press(按键), drag(拖拽), wait(等待), focus(聚焦), blur(失焦), clear(清空), getAttribute(获取属性), getProperty(获取属性值), navigate(导航), scrollIntoView(滚动到元素), switchFrame(切换iframe), handleDialog(处理弹窗), setLocalStorage(设置存储), getLocalStorage(获取存储), clearLocalStorage(清除存储), setCookie(设置Cookie), getCookie(获取Cookie), clearCookies(清除Cookies), copyToClipboard(复制), pasteFromClipboard(粘贴), upload(上传文件), evaluate(执行JS), addListItem(添加列表项), removeListItem(删除列表项), editListItem(编辑列表项), setContent(设置内容), appendContent(追加内容), prependContent(前置内容), insertHTML(插入HTML)'
                 },
                 target: {
                   type: 'object',
@@ -134,7 +134,14 @@ class BrowserToolService {
                           content: { type: 'string', description: 'base64编码的文件内容' }
                         }
                       }
-                    }
+                    },
+                    listSelector: { type: 'string', description: '列表容器选择器（addListItem使用）' },
+                    itemContent: { type: 'string', description: '列表项内容（addListItem/editListItem使用）' },
+                    position: { type: 'string', enum: ['before', 'after', 'first', 'last'], description: '插入位置（addListItem使用）' },
+                    itemIndex: { type: 'number', description: '列表项索引（removeListItem使用）' },
+                    content: { type: 'string', description: '文本内容（setContent/appendContent/prependContent使用）' },
+                    html: { type: 'string', description: 'HTML内容（insertHTML使用）' },
+                    insertPosition: { type: 'string', enum: ['beforebegin', 'afterbegin', 'beforeend', 'afterend'], description: 'HTML插入位置: beforebegin(元素前), afterbegin(内部开头), beforeend(内部末尾), afterend(元素后)' }
                   }
                 }
               },

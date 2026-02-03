@@ -193,9 +193,16 @@ export function collectInteractiveElements(): PageElement[] {
     '[role="link"]',
     '[role="checkbox"]',
     '[role="radio"]',
+    '[role="listitem"]',
+    '[role="option"]',
     '[contenteditable="true"]',
     '[onclick]',
-    '[tabindex]:not([tabindex="-1"])'
+    '[tabindex]:not([tabindex="-1"])',
+    'li[onclick]',
+    'li[data-clickable]',
+    'li.clickable',
+    'ul[data-list] > li',
+    'ol[data-list] > li'
   ]
 
   const allElements = document.querySelectorAll(selectors.join(', '))
@@ -308,7 +315,8 @@ function generateElementDescription(el: PageElement): string {
     textarea: '文本框',
     button: '按钮',
     a: '链接',
-    select: '下拉框'
+    select: '下拉框',
+    li: '列表项'
   }
 
   let typeName = typeMap[el.tag] || el.tag

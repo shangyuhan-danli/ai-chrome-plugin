@@ -105,6 +105,15 @@ export interface PageAction {
     resourceTypes?: string[] // 资源类型
     interceptAction?: 'block' | 'redirect' | 'modify'  // 拦截操作
     redirectUrl?: string   // 重定向 URL
+    // 列表项操作参数
+    listSelector?: string  // 列表容器选择器 (ul/ol)
+    itemContent?: string   // 列表项内容
+    position?: 'before' | 'after' | 'first' | 'last'  // 插入位置
+    itemIndex?: number     // 列表项索引
+    // 内容操作参数
+    content?: string       // 文本内容
+    html?: string          // HTML内容
+    insertPosition?: 'beforebegin' | 'afterbegin' | 'beforeend' | 'afterend'  // HTML插入位置
   }
 }
 
@@ -151,6 +160,13 @@ export type PageActionType =
   | 'copyToClipboard'    // 复制到剪贴板
   | 'pasteFromClipboard' // 从剪贴板粘贴
   | 'interceptRequest'   // 拦截网络请求
+  | 'addListItem'        // 添加列表项
+  | 'removeListItem'     // 删除列表项
+  | 'editListItem'       // 编辑列表项
+  | 'setContent'         // 设置元素内容（div等）
+  | 'appendContent'      // 追加内容
+  | 'prependContent'     // 前置内容
+  | 'insertHTML'         // 插入HTML
 
 /**
  * 操作执行结果

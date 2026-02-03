@@ -1111,6 +1111,277 @@ async function evaluateScript(script?: string): Promise<ActionResult> {
 }
 
 /**
+ * 添加列表项
+ */
+async function addListItem(
+  target: PageAction['target'],
+  listSelector?: string,
+  itemContent?: string,
+  position?: 'before' | 'after' | 'first' | 'last'
+): Promise<ActionResult> {
+  if (!itemContent) {
+    return { success: false, message: '未提供列表项内容', error: 'NO_CONTENT' }
+  }
+
+  // 查找列表容器
+  let list: HTMLUListElement | HTMLOListElement | null = null
+
+  if (listSelector) {
+    list = document.querySelector(listSelector) as HTMLUListElement | HTMLOListElement
+  } else if (target.elementId || target.selector) {
+    // 如果指定了元素，查找其父级列表
+    const el = target.elementId ? getElementById(target.elementId) :
+               document.querySelector(target.selector!) as HTMLElement
+    if (el) {
+      list = el.closest('ul, ol') as HTMLUListElement | HTMLOListElement
+    }
+  }
+
+  if (!list) {
+    return { success: false, message: '未找到列表容器', error: 'LIST_NOT_FOUND' }
+  }
+
+  // 创建新列表项
+  const newItem = document.createElement('li')
+  newItem.textContent = itemContent
+
+  // 根据位置插入
+  const referenceEl = target.elementId ? getElementById(target.elementId) :
+                      target.selector ? document.querySelector(target.selector) as HTMLElement : null
+
+  switch (position) {
+    case 'before':
+      if (referenceEl && referenceEl.tagName === 'LI') {
+        referenceEl.parentNode?.insertBefore(newItem, referenceEl)
+      } else {
+        list.insertBefore(newItem, list.firstChild)
+      }
+      break
+    case 'after':
+      if (referenceEl && referenceEl.tagName === 'LI') {
+        referenceEl.parentNode?.insertBefore(newItem, referenceEl.nextSibling)
+      } else {
+        list.appendChild(newItem)
+      }
+      break
+    case 'first':
+      list.insertBefore(newItem, list.firstChild)
+      break
+    case 'last':
+    default:
+      list.appendChild(newItem)
+      break
+  }
+
+  // 触发变更事件
+  list.dispatchEvent(new Event('change', { bubbles: true }))
+
+  return { success: true, message: `已添加列表项: ${itemContent}` }
+}
+
+/**
+ * 删除列表项
+ */
+async function removeListItem(
+  target: PageAction['target'],
+  itemIndex?: number
+): Promise<ActionResult> {
+  let itemToRemove: HTMLElement | null = null
+
+  if (target.elementId || target.selector) {
+    itemToRemove = target.elementId ? getElementById(target.elementId) :
+                   document.querySelector(target.selector!) as HTMLElement
+  } else if (itemIndex !== undefined) {
+    // 通过索引查找
+    const lists = document.querySelectorAll('ul, ol')
+    for (const list of lists) {
+      const items = list.querySelectorAll(':scope > li')
+      if (items[itemIndex]) {
+        itemToRemove = items[itemIndex] as HTMLElement
+        break
+      }
+    }
+  }
+
+  if (!itemToRemove || itemToRemove.tagName !== 'LI') {
+    return { success: false, message: '未找到要删除的列表项', error: 'ITEM_NOT_FOUND' }
+  }
+
+  const content = itemToRemove.textContent?.trim() || ''
+  const parent = itemToRemove.parentNode
+
+  itemToRemove.remove()
+
+  // 触发变更事件
+  if (parent) {
+    parent.dispatchEvent(new Event('change', { bubbles: true }))
+  }
+
+  return { success: true, message: `已删除列表项: ${content}` }
+}
+
+/**
+ * 编辑列表项
+ */
+async function editListItem(
+  target: PageAction['target'],
+  newContent?: string
+): Promise<ActionResult> {
+  if (!newContent) {
+    return { success: false, message: '未提供新内容', error: 'NO_CONTENT' }
+  }
+
+  const el = target.elementId ? getElementById(target.elementId) :
+             target.selector ? document.querySelector(target.selector) as HTMLElement : null
+
+  if (!el || el.tagName !== 'LI') {
+    return { success: false, message: '未找到列表项元素', error: 'ITEM_NOT_FOUND' }
+  }
+
+  const oldContent = el.textContent?.trim() || ''
+  el.textContent = newContent
+
+  // 触发变更事件
+  el.dispatchEvent(new Event('input', { bubbles: true }))
+  el.dispatchEvent(new Event('change', { bubbles: true }))
+
+  return { success: true, message: `已编辑列表项: "${oldContent}" → "${newContent}"` }
+}
+
+/**
+ * 设置元素内容（替换）
+ */
+async function setContent(target: PageAction['target'], content?: string): Promise<ActionResult> {
+  if (content === undefined) {
+    return { success: false, message: '未提供内容', error: 'NO_CONTENT' }
+  }
+
+  const el = target.elementId ? getElementById(target.elementId) :
+             target.selector ? document.querySelector(target.selector) as HTMLElement : null
+
+  if (!el) {
+    return { success: false, message: '未找到目标元素', error: 'ELEMENT_NOT_FOUND' }
+  }
+
+  const oldContent = el.textContent?.trim() || ''
+
+  // 根据元素类型选择设置方式
+  if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') {
+    (el as HTMLInputElement | HTMLTextAreaElement).value = content
+  } else if (el.getAttribute('contenteditable') === 'true') {
+    el.textContent = content
+  } else {
+    el.textContent = content
+  }
+
+  // 触发事件
+  el.dispatchEvent(new Event('input', { bubbles: true }))
+  el.dispatchEvent(new Event('change', { bubbles: true }))
+
+  return { success: true, message: `已设置内容: "${oldContent.substring(0, 20)}..." → "${content.substring(0, 20)}..."` }
+}
+
+/**
+ * 追加内容到元素末尾
+ */
+async function appendContent(target: PageAction['target'], content?: string): Promise<ActionResult> {
+  if (!content) {
+    return { success: false, message: '未提供内容', error: 'NO_CONTENT' }
+  }
+
+  const el = target.elementId ? getElementById(target.elementId) :
+             target.selector ? document.querySelector(target.selector) as HTMLElement : null
+
+  if (!el) {
+    return { success: false, message: '未找到目标元素', error: 'ELEMENT_NOT_FOUND' }
+  }
+
+  // 根据元素类型追加
+  if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') {
+    const input = el as HTMLInputElement | HTMLTextAreaElement
+    input.value += content
+  } else if (el.getAttribute('contenteditable') === 'true') {
+    el.textContent = (el.textContent || '') + content
+  } else {
+    el.appendChild(document.createTextNode(content))
+  }
+
+  // 触发事件
+  el.dispatchEvent(new Event('input', { bubbles: true }))
+  el.dispatchEvent(new Event('change', { bubbles: true }))
+
+  return { success: true, message: `已追加内容: "${content.substring(0, 30)}${content.length > 30 ? '...' : ''}"` }
+}
+
+/**
+ * 前置内容到元素开头
+ */
+async function prependContent(target: PageAction['target'], content?: string): Promise<ActionResult> {
+  if (!content) {
+    return { success: false, message: '未提供内容', error: 'NO_CONTENT' }
+  }
+
+  const el = target.elementId ? getElementById(target.elementId) :
+             target.selector ? document.querySelector(target.selector) as HTMLElement : null
+
+  if (!el) {
+    return { success: false, message: '未找到目标元素', error: 'ELEMENT_NOT_FOUND' }
+  }
+
+  // 根据元素类型前置
+  if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') {
+    const input = el as HTMLInputElement | HTMLTextAreaElement
+    input.value = content + input.value
+  } else if (el.getAttribute('contenteditable') === 'true') {
+    el.textContent = content + (el.textContent || '')
+  } else {
+    el.insertBefore(document.createTextNode(content), el.firstChild)
+  }
+
+  // 触发事件
+  el.dispatchEvent(new Event('input', { bubbles: true }))
+  el.dispatchEvent(new Event('change', { bubbles: true }))
+
+  return { success: true, message: `已前置内容: "${content.substring(0, 30)}${content.length > 30 ? '...' : ''}"` }
+}
+
+/**
+ * 插入HTML内容
+ */
+async function insertHTML(
+  target: PageAction['target'],
+  html?: string,
+  position?: 'beforebegin' | 'afterbegin' | 'beforeend' | 'afterend'
+): Promise<ActionResult> {
+  if (!html) {
+    return { success: false, message: '未提供HTML内容', error: 'NO_HTML' }
+  }
+
+  const el = target.elementId ? getElementById(target.elementId) :
+             target.selector ? document.querySelector(target.selector) as HTMLElement : null
+
+  if (!el) {
+    return { success: false, message: '未找到目标元素', error: 'ELEMENT_NOT_FOUND' }
+  }
+
+  const insertPos = position || 'beforeend'
+  el.insertAdjacentHTML(insertPos, html)
+
+  // 触发事件
+  el.dispatchEvent(new Event('input', { bubbles: true }))
+  el.dispatchEvent(new Event('change', { bubbles: true }))
+
+  const positionDesc: Record<string, string> = {
+    'beforebegin': '元素之前',
+    'afterbegin': '元素内部开头',
+    'beforeend': '元素内部末尾',
+    'afterend': '元素之后'
+  }
+
+  return { success: true, message: `已在${positionDesc[insertPos]}插入HTML` }
+}
+
+/**
  * 清除 Cookies
  */
 async function clearCookies(name?: string): Promise<ActionResult> {
@@ -1211,6 +1482,20 @@ export async function executeAction(action: PageAction): Promise<ActionResult> {
         return await uploadFiles(action.target, action.params?.files)
       case 'evaluate':
         return await evaluateScript(action.params?.script)
+      case 'addListItem':
+        return await addListItem(action.target, action.params?.listSelector, action.params?.itemContent, action.params?.position)
+      case 'removeListItem':
+        return await removeListItem(action.target, action.params?.itemIndex)
+      case 'editListItem':
+        return await editListItem(action.target, action.params?.itemContent)
+      case 'setContent':
+        return await setContent(action.target, action.params?.content)
+      case 'appendContent':
+        return await appendContent(action.target, action.params?.content)
+      case 'prependContent':
+        return await prependContent(action.target, action.params?.content)
+      case 'insertHTML':
+        return await insertHTML(action.target, action.params?.html, action.params?.insertPosition)
       default:
         return { success: false, message: `不支持的操作类型: ${action.action}`, error: 'UNSUPPORTED_ACTION' }
     }
