@@ -52,6 +52,21 @@ function updateLayoutStyle(width: number) {
   }
 }
 
+// 清理拖拽状态的函数
+function cleanupResizeState() {
+  isResizing = false
+
+  // 移除遮罩层
+  const overlay = document.getElementById('ai-chat-resize-overlay')
+  if (overlay) {
+    overlay.remove()
+  }
+
+  if (resizeHandle) {
+    resizeHandle.style.background = 'transparent'
+  }
+}
+
 // 设置拖拽事件处理
 function setupResizeHandlers() {
   if (!resizeHandle) return
@@ -61,6 +76,11 @@ function setupResizeHandlers() {
 
   const onMouseDown = (e: MouseEvent) => {
     e.preventDefault()
+    e.stopPropagation()
+
+    // 先清理可能残留的状态
+    cleanupResizeState()
+
     isResizing = true
     startX = e.clientX
     startWidth = currentWidth
@@ -76,6 +96,7 @@ function setupResizeHandlers() {
       height: 100%;
       z-index: 2147483646;
       cursor: ew-resize;
+      background: transparent;
     `
     document.body.appendChild(overlay)
 
@@ -85,6 +106,8 @@ function setupResizeHandlers() {
 
     document.addEventListener('mousemove', onMouseMove)
     document.addEventListener('mouseup', onMouseUp)
+    // 添加 mouseleave 事件，防止鼠标移出窗口后状态残留
+    document.addEventListener('mouseleave', onMouseUp)
   }
 
   const onMouseMove = (e: MouseEvent) => {
@@ -107,23 +130,17 @@ function setupResizeHandlers() {
   }
 
   const onMouseUp = () => {
-    isResizing = false
-
-    // 移除遮罩层
-    const overlay = document.getElementById('ai-chat-resize-overlay')
-    if (overlay) {
-      overlay.remove()
-    }
-
-    if (resizeHandle) {
-      resizeHandle.style.background = 'transparent'
-    }
-
-    document.removeEventListener('mousemove', onMouseMove)
-    document.removeEventListener('mouseup', onMouseUp)
+    if (!isResizing) return
 
     // 保存宽度到 storage
     chrome.storage.local.set({ chatWidth: currentWidth })
+
+    // 清理状态
+    cleanupResizeState()
+
+    document.removeEventListener('mousemove', onMouseMove)
+    document.removeEventListener('mouseup', onMouseUp)
+    document.removeEventListener('mouseleave', onMouseUp)
   }
 
   resizeHandle.addEventListener('mousedown', onMouseDown)
