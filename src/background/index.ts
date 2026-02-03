@@ -16,7 +16,14 @@ function generateUUID(): string {
 }
 
 // 初始化数据库和 API 配置
-chatDB.init().catch(console.error)
+chatDB.init().then(() => {
+  // 启动时清理过期数据
+  chatDB.cleanExpiredSessions().then(result => {
+    if (result.deletedSessions > 0) {
+      console.log(`[Cleanup] 已清理 ${result.deletedSessions} 个过期会话，${result.deletedMessages} 条消息`)
+    }
+  }).catch(console.error)
+}).catch(console.error)
 
 // 从存储中加载 API 配置
 async function loadApiConfig() {
@@ -209,6 +216,30 @@ async function handleMessage(message: ChromeMessage, sender: chrome.runtime.Mess
       case 'GET_SETTING':
         const value = await chatDB.getSetting(payload.key)
         return { success: true, data: value }
+
+      case 'RENAME_SESSION':
+        await chatDB.renameSession(payload.sessionId, payload.title)
+        return { success: true }
+
+      case 'EXPORT_SESSION':
+        const exportData = await chatDB.exportSession(payload.sessionId)
+        return { success: true, data: exportData }
+
+      case 'EXPORT_ALL_SESSIONS':
+        const allData = await chatDB.exportAllSessions()
+        return { success: true, data: allData }
+
+      case 'GET_RETENTION_DAYS':
+        const retentionDays = await chatDB.getRetentionDays()
+        return { success: true, data: retentionDays }
+
+      case 'SET_RETENTION_DAYS':
+        await chatDB.setRetentionDays(payload.days)
+        return { success: true }
+
+      case 'CLEAN_EXPIRED_SESSIONS':
+        const cleanResult = await chatDB.cleanExpiredSessions()
+        return { success: true, data: cleanResult }
 
       // 处理工具响应 - 用户点击 approve/reject 后调用
       case 'TOOL_RESPONSE':

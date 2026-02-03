@@ -236,8 +236,28 @@
             </label>
           </div>
 
+          <div class="form-group">
+            <label>数据保留时间</label>
+            <div class="retention-setting">
+              <input
+                type="number"
+                v-model.number="generalSettings.retentionDays"
+                min="1"
+                max="365"
+                class="form-input retention-input"
+              />
+              <span class="retention-unit">天</span>
+            </div>
+            <p class="form-hint">超过此时间的会话将在插件启动时自动清理（1-365天）</p>
+          </div>
+
           <div class="form-actions">
             <button class="btn-primary" @click="saveGeneralSettings">保存设置</button>
+            <button class="btn-secondary" @click="cleanExpiredData">立即清理过期数据</button>
+          </div>
+
+          <div v-if="cleanResult" :class="['alert', 'alert-success']">
+            {{ cleanResult }}
           </div>
         </div>
       </div>
@@ -335,10 +355,12 @@ const onModelChange = () => {
 const generalSettings = ref({
   displayMode: 'float' as 'float' | 'sidebar',
   autoOpen: false,
-  saveHistory: true
+  saveHistory: true,
+  retentionDays: 90
 })
 
 const apiTestResult = ref<{ success: boolean; message: string } | null>(null)
+const cleanResult = ref<string | null>(null)
 
 onMounted(async () => {
   await loadSessions()
@@ -377,6 +399,14 @@ const loadSettings = async () => {
     })
     if (displayModeResponse?.success && displayModeResponse.data) {
       generalSettings.value.displayMode = displayModeResponse.data
+    }
+
+    // 加载数据保留天数
+    const retentionResponse = await chrome.runtime.sendMessage({
+      type: 'GET_RETENTION_DAYS'
+    })
+    if (retentionResponse?.success && retentionResponse.data) {
+      generalSettings.value.retentionDays = retentionResponse.data
     }
 
     const apiKeyResponse = await chrome.runtime.sendMessage({
@@ -523,9 +553,33 @@ const saveGeneralSettings = async () => {
       type: 'SAVE_SETTING',
       payload: { key: 'saveHistory', value: generalSettings.value.saveHistory }
     })
+    // 保存数据保留天数
+    await chrome.runtime.sendMessage({
+      type: 'SET_RETENTION_DAYS',
+      payload: { days: generalSettings.value.retentionDays }
+    })
     alert('通用设置已保存')
   } catch (error) {
     console.error('保存通用设置失败:', error)
+  }
+}
+
+const cleanExpiredData = async () => {
+  try {
+    const response = await chrome.runtime.sendMessage({
+      type: 'CLEAN_EXPIRED_SESSIONS'
+    })
+    if (response?.success) {
+      const { deletedSessions, deletedMessages } = response.data
+      cleanResult.value = `已清理 ${deletedSessions} 个过期会话，${deletedMessages} 条消息`
+      // 重新加载会话列表
+      await loadSessions()
+      setTimeout(() => {
+        cleanResult.value = null
+      }, 5000)
+    }
+  } catch (error) {
+    console.error('清理过期数据失败:', error)
   }
 }
 
@@ -884,6 +938,21 @@ const formatDate = (timestamp: number) => {
   cursor: pointer;
   width: 18px;
   height: 18px;
+}
+
+.retention-setting {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.retention-input {
+  width: 100px;
+}
+
+.retention-unit {
+  font-size: var(--text-md);
+  color: var(--text-secondary);
 }
 
 .alert {

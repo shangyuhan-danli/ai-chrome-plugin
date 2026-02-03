@@ -59,6 +59,27 @@
                       <span class="session-time">{{ formatSessionTime(session.updatedAt) }}</span>
                     </div>
                   </div>
+                  <div class="session-dropdown-actions">
+                    <button class="session-action-btn" @click.stop="startRenameSession(session)" title="重命名">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" width="14" height="14">
+                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                      </svg>
+                    </button>
+                    <button class="session-action-btn" @click.stop="exportSession(session.id)" title="导出">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" width="14" height="14">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        <polyline points="7 10 12 15 17 10" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        <line x1="12" y1="15" x2="12" y2="3" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                      </svg>
+                    </button>
+                    <button class="session-action-btn delete" @click.stop="confirmDeleteSession(session)" title="删除">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" width="14" height="14">
+                        <polyline points="3 6 5 6 21 6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                      </svg>
+                    </button>
+                  </div>
                   <div v-if="currentSessionId === session.id" class="session-check">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
                       <polyline points="20 6 9 17 4 12" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -103,6 +124,42 @@
               <line x1="6" y1="6" x2="18" y2="18" stroke-width="2" stroke-linecap="round"/>
             </svg>
           </button>
+        </div>
+      </div>
+
+      <!-- 重命名对话框 -->
+      <div v-if="renamingSession" class="modal-overlay" @click="cancelRename">
+        <div class="modal-dialog" @click.stop>
+          <div class="modal-header">重命名会话</div>
+          <div class="modal-body">
+            <input
+              type="text"
+              class="rename-input"
+              v-model="renameInput"
+              @keyup.enter="confirmRename"
+              @keyup.esc="cancelRename"
+              placeholder="输入新名称"
+            />
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-secondary" @click="cancelRename">取消</button>
+            <button class="btn btn-primary" @click="confirmRename">确定</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 删除确认对话框 -->
+      <div v-if="sessionToDelete" class="modal-overlay" @click="cancelDelete">
+        <div class="modal-dialog" @click.stop>
+          <div class="modal-header">确认删除</div>
+          <div class="modal-body">
+            <p>确定要删除会话 "{{ sessionToDelete.title || sessionToDelete.pageTitle || '未命名会话' }}" 吗？</p>
+            <p class="modal-warning">此操作不可恢复</p>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-secondary" @click="cancelDelete">取消</button>
+            <button class="btn btn-danger" @click="deleteSession">删除</button>
+          </div>
         </div>
       </div>
 
@@ -1371,6 +1428,130 @@ const createNewSession = async () => {
   } catch (error) {
     console.error('创建新会话失败:', error)
   }
+}
+
+// 重命名会话相关
+const renamingSession = ref<any>(null)
+const renameInput = ref('')
+
+const startRenameSession = (session: any) => {
+  renamingSession.value = session
+  renameInput.value = session.title || session.pageTitle || ''
+  // 显示重命名对话框
+  nextTick(() => {
+    const input = document.querySelector('.rename-input') as HTMLInputElement
+    input?.focus()
+    input?.select()
+  })
+}
+
+const confirmRename = async () => {
+  if (!renamingSession.value || !renameInput.value.trim()) return
+
+  try {
+    await chrome.runtime.sendMessage({
+      type: 'RENAME_SESSION',
+      payload: {
+        sessionId: renamingSession.value.id,
+        title: renameInput.value.trim()
+      }
+    })
+    // 更新本地列表
+    const session = sessions.value.find(s => s.id === renamingSession.value.id)
+    if (session) {
+      session.title = renameInput.value.trim()
+    }
+    renamingSession.value = null
+    renameInput.value = ''
+  } catch (error) {
+    console.error('重命名会话失败:', error)
+  }
+}
+
+const cancelRename = () => {
+  renamingSession.value = null
+  renameInput.value = ''
+}
+
+// 导出会话
+const exportSession = async (sessionId: number) => {
+  try {
+    const response = await chrome.runtime.sendMessage({
+      type: 'EXPORT_SESSION',
+      payload: { sessionId }
+    })
+
+    if (response.success && response.data) {
+      const data = response.data
+      const filename = `chat-session-${data.session.title || sessionId}-${new Date().toISOString().slice(0, 10)}.json`
+      downloadJson(data, filename)
+    }
+  } catch (error) {
+    console.error('导出会话失败:', error)
+  }
+}
+
+// 导出所有会话
+const exportAllSessions = async () => {
+  try {
+    const response = await chrome.runtime.sendMessage({
+      type: 'EXPORT_ALL_SESSIONS'
+    })
+
+    if (response.success && response.data) {
+      const filename = `chat-all-sessions-${new Date().toISOString().slice(0, 10)}.json`
+      downloadJson(response.data, filename)
+    }
+  } catch (error) {
+    console.error('导出所有会话失败:', error)
+  }
+}
+
+// 下载 JSON 文件
+const downloadJson = (data: any, filename: string) => {
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+}
+
+// 删除会话确认
+const sessionToDelete = ref<any>(null)
+
+const confirmDeleteSession = (session: any) => {
+  sessionToDelete.value = session
+}
+
+const deleteSession = async () => {
+  if (!sessionToDelete.value) return
+
+  try {
+    await chrome.runtime.sendMessage({
+      type: 'DELETE_SESSION',
+      payload: { sessionId: sessionToDelete.value.id }
+    })
+
+    // 从列表中移除
+    sessions.value = sessions.value.filter(s => s.id !== sessionToDelete.value.id)
+
+    // 如果删除的是当前会话，创建新会话
+    if (currentSessionId.value === sessionToDelete.value.id) {
+      await createNewSession()
+    }
+
+    sessionToDelete.value = null
+  } catch (error) {
+    console.error('删除会话失败:', error)
+  }
+}
+
+const cancelDelete = () => {
+  sessionToDelete.value = null
 }
 </script>
 
@@ -2655,6 +2836,139 @@ const createNewSession = async () => {
   width: 18px;
   height: 18px;
   stroke: var(--primary-500);
+}
+
+/* 会话操作按钮 */
+.session-dropdown-actions {
+  display: flex;
+  gap: var(--space-1);
+  opacity: 0;
+  transition: opacity var(--transition-base);
+}
+
+.session-dropdown-item:hover .session-dropdown-actions {
+  opacity: 1;
+}
+
+.session-action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  color: var(--text-muted);
+  transition: all var(--transition-base);
+}
+
+.session-action-btn:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.session-action-btn.delete:hover {
+  background: rgba(239, 68, 68, 0.1);
+  color: var(--error-500);
+}
+
+/* 模态对话框 */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modal-dialog {
+  background: var(--bg-primary);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  width: 320px;
+  max-width: 90%;
+}
+
+.modal-header {
+  padding: var(--space-4);
+  font-weight: 600;
+  font-size: var(--text-md);
+  border-bottom: 1px solid var(--border-primary);
+}
+
+.modal-body {
+  padding: var(--space-4);
+}
+
+.modal-body p {
+  margin: 0 0 var(--space-2) 0;
+  color: var(--text-secondary);
+}
+
+.modal-warning {
+  color: var(--error-500) !important;
+  font-size: var(--text-sm);
+}
+
+.modal-footer {
+  padding: var(--space-3) var(--space-4);
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  border-top: 1px solid var(--border-primary);
+}
+
+.rename-input {
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  outline: none;
+}
+
+.rename-input:focus {
+  border-color: var(--primary-500);
+  box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.2);
+}
+
+.btn-secondary {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-primary);
+}
+
+.btn-secondary:hover {
+  background: var(--bg-hover);
+}
+
+.btn-primary {
+  background: var(--primary-500);
+  color: white;
+  border: none;
+}
+
+.btn-primary:hover {
+  background: var(--primary-600);
+}
+
+.btn-danger {
+  background: var(--error-500);
+  color: white;
+  border: none;
+}
+
+.btn-danger:hover {
+  background: var(--error-600);
 }
 
 /* Token 统计栏样式 */

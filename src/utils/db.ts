@@ -4,6 +4,9 @@ export class ChatDB {
   private version = 2  // 升级版本以支持新字段
   private db: IDBDatabase | null = null
 
+  // 默认数据保留天数
+  private static DEFAULT_RETENTION_DAYS = 90
+
   async init(): Promise<void> {
     return new Promise((resolve, reject) => {
       const request = indexedDB.open(this.dbName, this.version)
@@ -227,6 +230,129 @@ export class ChatDB {
       request.onsuccess = () => resolve()
       request.onerror = () => reject(request.error)
     })
+  }
+
+  /**
+   * 获取数据保留天数设置
+   */
+  async getRetentionDays(): Promise<number> {
+    const days = await this.getSetting('retentionDays')
+    return days ?? ChatDB.DEFAULT_RETENTION_DAYS
+  }
+
+  /**
+   * 设置数据保留天数
+   */
+  async setRetentionDays(days: number): Promise<void> {
+    await this.saveSetting('retentionDays', days)
+  }
+
+  /**
+   * 清理过期会话数据
+   */
+  async cleanExpiredSessions(): Promise<{ deletedSessions: number; deletedMessages: number }> {
+    const retentionDays = await this.getRetentionDays()
+    const cutoffTime = Date.now() - retentionDays * 24 * 60 * 60 * 1000
+
+    if (!this.db) await this.init()
+
+    return new Promise((resolve, reject) => {
+      let deletedSessions = 0
+      let deletedMessages = 0
+      const sessionIdsToDelete: number[] = []
+
+      const transaction = this.db!.transaction(['sessions', 'messages'], 'readwrite')
+      const sessionStore = transaction.objectStore('sessions')
+      const messageStore = transaction.objectStore('messages')
+
+      // 查找过期会话
+      const sessionRequest = sessionStore.openCursor()
+      sessionRequest.onsuccess = (event) => {
+        const cursor = (event.target as IDBRequest).result
+        if (cursor) {
+          const session = cursor.value
+          if (session.updatedAt < cutoffTime) {
+            sessionIdsToDelete.push(session.id)
+            cursor.delete()
+            deletedSessions++
+          }
+          cursor.continue()
+        } else {
+          // 会话遍历完成，删除相关消息
+          if (sessionIdsToDelete.length > 0) {
+            const messageRequest = messageStore.openCursor()
+            messageRequest.onsuccess = (event) => {
+              const msgCursor = (event.target as IDBRequest).result
+              if (msgCursor) {
+                if (sessionIdsToDelete.includes(msgCursor.value.sessionId)) {
+                  msgCursor.delete()
+                  deletedMessages++
+                }
+                msgCursor.continue()
+              }
+            }
+          }
+        }
+      }
+
+      transaction.oncomplete = () => resolve({ deletedSessions, deletedMessages })
+      transaction.onerror = () => reject(transaction.error)
+    })
+  }
+
+  /**
+   * 导出会话数据
+   */
+  async exportSession(sessionId: number): Promise<{
+    session: any
+    messages: any[]
+    exportedAt: string
+  } | null> {
+    const session = await this.getSession(sessionId)
+    if (!session) return null
+
+    const messages = await this.getMessages(sessionId)
+
+    return {
+      session,
+      messages,
+      exportedAt: new Date().toISOString()
+    }
+  }
+
+  /**
+   * 导出所有会话数据
+   */
+  async exportAllSessions(): Promise<{
+    sessions: any[]
+    messages: any[]
+    exportedAt: string
+  }> {
+    const sessions = await this.getSessions()
+
+    if (!this.db) await this.init()
+
+    const messages = await new Promise<any[]>((resolve, reject) => {
+      const transaction = this.db!.transaction(['messages'], 'readonly')
+      const store = transaction.objectStore('messages')
+      const request = store.getAll()
+
+      request.onsuccess = () => resolve(request.result)
+      request.onerror = () => reject(request.error)
+    })
+
+    return {
+      sessions,
+      messages,
+      exportedAt: new Date().toISOString()
+    }
+  }
+
+  /**
+   * 重命名会话
+   */
+  async renameSession(sessionId: number, newTitle: string): Promise<void> {
+    await this.updateSession(sessionId, { title: newTitle })
   }
 }
 
