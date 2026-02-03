@@ -164,7 +164,7 @@ class BrowserToolService {
     // screenshot - 页面截图
     this.register({
       name: 'screenshot',
-      description: '截取当前页面的可见区域截图，返回base64编码的PNG图片。',
+      description: '截取当前页面的可见区域截图，保存到剪贴板并返回图片数据。用户可以直接粘贴使用。',
       parameters: {
         type: 'object',
         properties: {
@@ -176,10 +176,18 @@ class BrowserToolService {
           quality: {
             type: 'number',
             description: 'JPEG质量(0-100)，仅format=jpeg时有效'
+          },
+          autoDownload: {
+            type: 'boolean',
+            description: '是否自动下载图片，默认false'
+          },
+          filename: {
+            type: 'string',
+            description: '下载文件名，默认screenshot_{timestamp}.png'
           }
         }
       },
-      execute: async (args: { format?: 'png' | 'jpeg'; quality?: number }, tabId: number) => {
+      execute: async (args: { format?: 'png' | 'jpeg'; quality?: number; autoDownload?: boolean; filename?: string }, _tabId: number) => {
         try {
           const options: chrome.tabs.CaptureVisibleTabOptions = {
             format: args.format || 'png'
@@ -187,8 +195,41 @@ class BrowserToolService {
           if (args.format === 'jpeg' && args.quality) {
             options.quality = args.quality
           }
-          const dataUrl = await chrome.tabs.captureVisibleTab(undefined, options)
-          return { success: true, data: dataUrl }
+          
+          // 1. 截图 - 使用当前活动窗口
+          const dataUrl = await chrome.tabs.captureVisibleTab(options)
+          
+          // 2. 转换为 Blob 并保存到剪贴板
+          const response = await fetch(dataUrl)
+          const blob = await response.blob()
+          
+          try {
+            await navigator.clipboard.write([
+              new ClipboardItem({
+                [blob.type]: blob
+              })
+            ])
+          } catch (clipboardError) {
+            console.warn('保存到剪贴板失败:', clipboardError)
+          }
+          
+          // 3. 如果需要自动下载
+          if (args.autoDownload) {
+            const filename = args.filename || `screenshot_${Date.now()}.png`
+            await chrome.downloads.download({
+              url: dataUrl,
+              filename: filename,
+              saveAs: false
+            })
+          }
+          
+          return { 
+            success: true, 
+            data: dataUrl,
+            message: '截图已保存到剪贴板，你可以直接粘贴使用（Ctrl+V/Cmd+V）',
+            clipboardSaved: true,
+            autoDownload: args.autoDownload || false
+          }
         } catch (e) {
           return { success: false, error: String(e) }
         }

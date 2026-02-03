@@ -237,6 +237,28 @@
                 <div class="question-content">{{ block.text }}</div>
                 <div class="question-hint">请在下方输入框回复</div>
               </div>
+
+              <!-- 图片块（截图结果） -->
+              <div v-else-if="block.type === 'image'" class="image-block">
+                <div class="image-container">
+                  <img :src="(block as any).url" :alt="(block as any).alt || '图片'" class="screenshot-image" />
+                  <div class="image-actions">
+                    <button 
+                      class="btn btn-download" 
+                      @click="downloadScreenshot((block as any).url)"
+                      title="下载图片"
+                    >
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" width="16" height="16">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        <polyline points="7 10 12 15 17 10" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        <line x1="12" y1="15" x2="12" y2="3" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                      </svg>
+                      下载图片
+                    </button>
+                    <span class="image-hint">已保存到剪贴板，可直接粘贴</span>
+                  </div>
+                </div>
+              </div>
             </template>
           </div>
           <span class="message-time">{{ formatTime(msg.createdAt) }}</span>
@@ -723,6 +745,63 @@ const executeBrowserTool = async (toolName: string, argsJson: string): Promise<s
   return await browserToolService.execute(toolName, argsJson)
 }
 
+// 发送截图结果（带图片预览和下载按钮）
+// 下载截图
+const downloadScreenshot = (dataUrl: string, filename?: string) => {
+  const link = document.createElement('a')
+  link.href = dataUrl
+  link.download = filename || `screenshot_${Date.now()}.png`
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+}
+
+const sendScreenshotResult = async (toolName: string, resultObj: any) => {
+  // 添加带图片的消息
+  const imageMessage: StreamMessage = {
+    sessionId: currentSessionId.value,
+    role: 'assistant',  // 作为 assistant 消息显示
+    blocks: [
+      { 
+        type: 'text', 
+        text: `✅ ${resultObj.message || '截图已保存到剪贴板，你可以直接粘贴使用（Ctrl+V/Cmd+V）'}` 
+      },
+      {
+        type: 'image',
+        url: resultObj.data,  // base64 图片数据
+        alt: '页面截图'
+      } as any
+    ],
+    createdAt: Date.now()
+  }
+  streamMessages.value.push(imageMessage)
+  nextTick(scrollToBottom)
+
+  // 下载图片函数
+  const downloadImage = () => {
+    const link = document.createElement('a')
+    link.href = resultObj.data
+    link.download = `screenshot_${Date.now()}.png`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+  }
+
+  // 保存下载函数到消息中供模板使用
+  ;(imageMessage as any).downloadImage = downloadImage
+
+  // 发送给后端（不包含图片数据，只发送文本描述）
+  const resultForBackend = {
+    success: true,
+    message: resultObj.message,
+    clipboardSaved: resultObj.clipboardSaved,
+    autoDownload: resultObj.autoDownload,
+    imageDataLength: resultObj.data?.length || 0
+  }
+
+  await sendBrowserToolResultAsUser(toolName, JSON.stringify(resultForBackend), resultObj.message)
+}
+
 // 发送浏览器工具执行结果给后端（作为 user 消息）
 const sendBrowserToolResultAsUser = async (toolName: string, result: string, resultSummary: string) => {
   // 添加一个用户消息显示工具执行结果
@@ -1129,16 +1208,22 @@ const handleBrowserToolApproved = async (toolBlock: ToolUseBlock) => {
   // 执行工具
   const result = await executeBrowserTool(toolBlock.name, JSON.stringify(toolBlock.input))
 
-  // 解析结果用于显示
-  let resultSummary = ''
+  // 解析结果
+  let resultObj: any = {}
   try {
-    const resultObj = JSON.parse(result)
-    resultSummary = resultObj.summary || resultObj.message || (resultObj.success ? '执行成功' : '执行失败')
+    resultObj = JSON.parse(result)
   } catch {
-    resultSummary = result
+    resultObj = { success: false, error: result }
   }
 
-  // 将结果作为 user 消息发送给后端
+  // 特殊处理截图工具 - 显示图片
+  if (toolBlock.name === 'screenshot' && resultObj.success && resultObj.data) {
+    await sendScreenshotResult(toolBlock.name, resultObj)
+    return
+  }
+
+  // 其他工具 - 普通处理
+  const resultSummary = resultObj.summary || resultObj.message || (resultObj.success ? '执行成功' : '执行失败')
   await sendBrowserToolResultAsUser(toolBlock.name, result, resultSummary)
 }
 
@@ -2231,6 +2316,92 @@ const cancelDelete = () => {
 
 .tool-params .json-boolean {
   color: #d63384;
+}
+
+/* 图片块样式（截图结果） */
+.image-block {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+  margin: var(--space-2) 0;
+  transition: all var(--transition-base);
+}
+
+.image-block:hover {
+  border-color: var(--primary-500);
+  box-shadow: var(--shadow-sm);
+}
+
+.image-container {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.screenshot-image {
+  max-width: 100%;
+  max-height: 400px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-color);
+  box-shadow: var(--shadow-sm);
+  object-fit: contain;
+  background: white;
+}
+
+.image-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.btn-download {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: var(--primary-500);
+  color: white;
+  border: none;
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition-base);
+}
+
+.btn-download:hover {
+  background: var(--primary-600);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-sm);
+}
+
+.btn-download:active {
+  transform: translateY(0);
+}
+
+.btn-download svg {
+  stroke: currentColor;
+}
+
+.image-hint {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  font-style: italic;
+}
+
+/* 响应式：小屏幕时调整图片块布局 */
+@media (max-width: 640px) {
+  .image-actions {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-2);
+  }
+  
+  .screenshot-image {
+    max-height: 250px;
+  }
 }
 
 .tool-params .json-null {
