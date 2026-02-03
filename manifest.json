@@ -7,7 +7,11 @@
     "storage",
     "activeTab",
     "tabs",
-    "scripting"
+    "scripting",
+    "downloads",
+    "declarativeNetRequest",
+    "clipboardRead",
+    "clipboardWrite"
   ],
   "host_permissions": [
     "<all_urls>"
