@@ -377,13 +377,13 @@ class BrowserToolService {
         properties: {
           region: {
             type: 'string',
-            enum: ['form', 'header', 'sidebar', 'footer', 'below_viewport'],
-            description: '页面区域: form(表单区域), header(页头), sidebar(侧边栏), footer(页脚), below_viewport(视口下方)'
+            enum: ['form', 'header', 'sidebar', 'footer', 'below_viewport', 'tab_panel', 'modal', 'menu'],
+            description: '页面区域: form(表单区域), header(页头), sidebar(侧边栏), footer(页脚), below_viewport(视口下方), tab_panel(Tab面板内), modal(弹窗/模态框内), menu(菜单区域内)'
           },
           elementType: {
             type: 'string',
-            enum: ['input', 'button', 'link', 'select', 'all'],
-            description: '元素类型: input(输入框), button(按钮), link(链接), select(下拉框), all(所有)'
+            enum: ['input', 'button', 'link', 'select', 'tab', 'menu', 'list', 'radio', 'checkbox', 'all'],
+            description: '元素类型: input(输入框), button(按钮), link(链接), select(下拉框), tab(Tab页签), menu(菜单项), list(列表项), radio(单选框), checkbox(复选框), all(所有)'
           },
           keyword: {
             type: 'string',

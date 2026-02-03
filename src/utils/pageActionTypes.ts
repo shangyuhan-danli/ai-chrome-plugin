@@ -193,16 +193,19 @@ export interface BatchActionResult {
 export interface FilterStrategy {
   // 元素优先级权重
   priorities: {
-    form: number
-    button: number
-    link: number
-    text: number
+    form: number        // 表单元素
+    button: number       // 按钮
+    link: number        // 链接
+    text: number        // 文本
+    tab: number         // Tab页签
+    menu: number        // 菜单项
+    list: number        // 列表项
   }
   // 位置权重
   viewport: {
-    visible: number
-    nearViewport: number
-    hidden: number
+    visible: number     // 视口内
+    nearViewport: number // 视口附近
+    hidden: number      // 隐藏
   }
   // 最大元素数量
   maxElements: number
@@ -212,7 +215,7 @@ export interface FilterStrategy {
  * 请求更多元素的参数
  */
 export interface RequestMoreElementsParams {
-  region?: 'form' | 'header' | 'sidebar' | 'footer' | 'below_viewport'
-  elementType?: 'input' | 'button' | 'link' | 'select' | 'all'
+  region?: 'form' | 'header' | 'sidebar' | 'footer' | 'below_viewport' | 'tab_panel' | 'modal' | 'menu'
+  elementType?: 'input' | 'button' | 'link' | 'select' | 'tab' | 'menu' | 'list' | 'radio' | 'checkbox' | 'all'
   keyword?: string
 }

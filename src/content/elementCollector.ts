@@ -10,7 +10,10 @@ const defaultStrategy: FilterStrategy = {
     form: 10,
     button: 8,
     link: 3,
-    text: 1
+    text: 1,
+    tab: 7,        // Tab页签优先级
+    menu: 6,       // 菜单项优先级
+    list: 4        // 列表项优先级
   },
   viewport: {
     visible: 5,
@@ -182,27 +185,82 @@ export function collectInteractiveElements(): PageElement[] {
 
   const elements: PageElement[] = []
 
-  // 可交互元素选择器
+  // 可交互元素选择器 - 全面覆盖各种UI组件
   const selectors = [
+    // 基础表单元素
     'input:not([type="hidden"])',
     'textarea',
+    'select',
     'button',
     'a[href]',
-    'select',
+    
+    // ARIA角色 - 交互组件
     '[role="button"]',
     '[role="link"]',
     '[role="checkbox"]',
     '[role="radio"]',
-    '[role="listitem"]',
-    '[role="option"]',
-    '[contenteditable="true"]',
-    '[onclick]',
-    '[tabindex]:not([tabindex="-1"])',
+    '[role="switch"]',        // 开关/切换按钮
+    '[role="tab"]',           // Tab页签
+    '[role="tabpanel"]',      // Tab内容面板
+    '[role="listitem"]',      // 列表项
+    '[role="option"]',        // 下拉选项
+    '[role="menuitem"]',      // 菜单项
+    '[role="treeitem"]',      // 树形节点
+    '[role="gridcell"]',      // 表格单元格
+    '[role="cell"]',          // 单元格
+    
+    // 常用类名模式 - Tab页签
+    '[class*="tab"]',
+    '[class*="Tab"]',
+    '[data-tab]',
+    '[data-role="tab"]',
+    '.nav-tabs > li',
+    '.tab-list > *',
+    '.tab-item',
+    '[role="presentation"]',   // Bootstrap tabs
+    
+    // 列表项 - 各种可点击的li
     'li[onclick]',
     'li[data-clickable]',
     'li.clickable',
+    'li[role="button"]',
+    'li[role="tab"]',
+    'li[role="menuitem"]',
     'ul[data-list] > li',
-    'ol[data-list] > li'
+    'ol[data-list] > li',
+    '.list-group-item',        // Bootstrap
+    '.menu-item',              // 菜单项
+    '.dropdown-item',          // 下拉项
+    
+    // 可编辑内容
+    '[contenteditable="true"]',
+    
+    // 点击事件
+    '[onclick]',
+    
+    // TabIndex可聚焦
+    '[tabindex]:not([tabindex="-1"])',
+    
+    // 日期/时间选择器
+    'input[type="date"]',
+    'input[type="datetime-local"]',
+    'input[type="time"]',
+    'input[type="month"]',
+    'input[type="week"]',
+    
+    // 文件上传
+    'input[type="file"]',
+    
+    // 颜色选择器
+    'input[type="color"]',
+    
+    // 范围滑块
+    'input[type="range"]',
+    
+    // 特殊交互元素
+    'details',
+    'summary',
+    'label[for]'               // 关联的标签
   ]
 
   const allElements = document.querySelectorAll(selectors.join(', '))
@@ -265,6 +323,14 @@ function calculateScore(el: PageElement, keywords: string[], strategy: FilterStr
     score += strategy.priorities.form
   } else if (el.tag === 'a') {
     score += strategy.priorities.link
+  } else if (el.tag === 'li' || el.tag === 'details' || el.tag === 'summary') {
+    score += strategy.priorities.list
+  }
+  
+  // Tab页签特殊权重
+  const originalEl = elementMap.get(el.id)
+  if (originalEl && isTabElement(el, originalEl)) {
+    score += strategy.priorities.tab
   }
 
   // 视口权重
@@ -304,9 +370,33 @@ export function filterElements(
 }
 
 /**
+ * 检查元素是否是Tab页签
+ */
+function isTabElement(el: PageElement, originalEl: HTMLElement): boolean {
+  // 通过role判断
+  if (originalEl.getAttribute('role') === 'tab') return true
+  
+  // 通过类名判断
+  const className = originalEl.className || ''
+  if (className.includes('tab') || className.includes('Tab')) return true
+  
+  // 通过data属性判断
+  if (originalEl.hasAttribute('data-tab')) return true
+  if (originalEl.getAttribute('data-role') === 'tab') return true
+  
+  // 通过父容器判断（Bootstrap风格的tabs）
+  const parent = originalEl.parentElement
+  if (parent && (parent.className.includes('nav-tabs') || parent.className.includes('tab-list'))) {
+    return true
+  }
+  
+  return false
+}
+
+/**
  * 生成元素描述
  */
-function generateElementDescription(el: PageElement): string {
+function generateElementDescription(el: PageElement, originalEl?: HTMLElement): string {
   const parts: string[] = []
 
   // 元素类型
@@ -316,23 +406,88 @@ function generateElementDescription(el: PageElement): string {
     button: '按钮',
     a: '链接',
     select: '下拉框',
-    li: '列表项'
+    li: '列表项',
+    details: '详情展开',
+    summary: '摘要标题'
   }
 
   let typeName = typeMap[el.tag] || el.tag
+  
+  // 检查是否是Tab页签
+  if (originalEl && isTabElement(el, originalEl)) {
+    typeName = 'Tab页签'
+  }
+  
+  // 通过role识别特殊组件
+  if (originalEl) {
+    const role = originalEl.getAttribute('role')
+    if (role) {
+      const roleMap: Record<string, string> = {
+        'tab': 'Tab页签',
+        'tabpanel': 'Tab面板',
+        'switch': '开关按钮',
+        'menuitem': '菜单项',
+        'option': '下拉选项',
+        'listitem': '列表项',
+        'treeitem': '树节点',
+        'gridcell': '表格单元',
+        'radio': '单选按钮',
+        'checkbox': '复选框',
+        'button': '按钮',
+        'link': '链接'
+      }
+      if (roleMap[role]) {
+        typeName = roleMap[role]
+      }
+    }
+  }
+  
   if (el.tag === 'input' && el.type) {
-    if (el.type === 'password') typeName = '密码框'
-    else if (el.type === 'submit') typeName = '提交按钮'
-    else if (el.type === 'checkbox') typeName = '复选框'
-    else if (el.type === 'radio') typeName = '单选框'
-    else if (el.type === 'search') typeName = '搜索框'
-    else if (el.type === 'email') typeName = '邮箱输入框'
+    const inputTypeMap: Record<string, string> = {
+      'password': '密码框',
+      'submit': '提交按钮',
+      'button': '按钮',
+      'checkbox': '复选框',
+      'radio': '单选框',
+      'search': '搜索框',
+      'email': '邮箱输入框',
+      'tel': '电话输入框',
+      'number': '数字输入框',
+      'url': 'URL输入框',
+      'date': '日期选择器',
+      'datetime-local': '日期时间选择器',
+      'time': '时间选择器',
+      'month': '月份选择器',
+      'week': '周选择器',
+      'file': '文件上传',
+      'color': '颜色选择器',
+      'range': '滑块',
+      'hidden': '隐藏字段'
+    }
+    if (inputTypeMap[el.type]) {
+      typeName = inputTypeMap[el.type]
+    }
   }
 
   parts.push(typeName)
 
-  // 标识信息（优先级：label > text > placeholder > ariaLabel > name）
-  const identifier = el.label || el.text || el.placeholder || el.ariaLabel || el.name
+  // 标识信息（优先级：label > text > placeholder > ariaLabel > name > title）
+  let identifier = el.label || el.text || el.placeholder || el.ariaLabel || el.name
+  
+  // 如果没有标识，尝试获取title属性
+  if (!identifier && originalEl) {
+    identifier = originalEl.getAttribute('title') || undefined
+  }
+  
+  // 对于Tab页签，特殊处理获取文本
+  if (!identifier && originalEl && typeName === 'Tab页签') {
+    // 获取子元素的文本
+    const childText = originalEl.textContent?.trim()
+    if (childText && childText.length < 50) {  // 限制长度
+      identifier = childText
+    }
+  }
+  
   if (identifier) {
     parts.push(identifier)
   }
@@ -348,6 +503,23 @@ function generateElementDescription(el: PageElement): string {
   if (el.disabled) {
     extras.push('禁用')
   }
+  
+  // Tab页签显示激活状态
+  if (typeName === 'Tab页签' && originalEl) {
+    const isActive = originalEl.classList.contains('active') || 
+                    originalEl.getAttribute('aria-selected') === 'true'
+    if (isActive) {
+      extras.push('当前激活')
+    }
+  }
+  
+  // 对于单选/复选框，显示选中状态
+  if ((el.type === 'radio' || el.type === 'checkbox') && originalEl) {
+    const isChecked = (originalEl as HTMLInputElement).checked
+    if (isChecked) {
+      extras.push('已选中')
+    }
+  }
 
   let desc = parts.join(':')
   if (extras.length > 0) {
@@ -361,10 +533,14 @@ function generateElementDescription(el: PageElement): string {
  * 转换为精简格式
  */
 export function toCompactFormat(elements: PageElement[]): CompactElement[] {
-  return elements.map(el => ({
-    id: el.id,
-    desc: generateElementDescription(el)
-  }))
+  return elements.map(el => {
+    // 从 elementMap 获取原始 DOM 元素，以便生成更准确的描述
+    const originalEl = elementMap.get(el.id)
+    return {
+      id: el.id,
+      desc: generateElementDescription(el, originalEl)
+    }
+  })
 }
 
 /**
@@ -418,6 +594,42 @@ export function requestMoreElements(params: {
               rect.y <= formRect.bottom
             )
           })
+        case 'tab_panel':
+          // Tab面板区域内的元素
+          const tabPanels = document.querySelectorAll('[role="tabpanel"], .tab-content, .tab-pane')
+          return Array.from(tabPanels).some(panel => {
+            const panelRect = panel.getBoundingClientRect()
+            return (
+              rect.x >= panelRect.left &&
+              rect.x <= panelRect.right &&
+              rect.y >= panelRect.top &&
+              rect.y <= panelRect.bottom
+            )
+          })
+        case 'modal':
+          // 弹窗/模态框内的元素
+          const modals = document.querySelectorAll('[role="dialog"], .modal, .dialog, [class*="modal"], [class*="dialog"]')
+          return Array.from(modals).some(modal => {
+            const modalRect = modal.getBoundingClientRect()
+            return (
+              rect.x >= modalRect.left &&
+              rect.x <= modalRect.right &&
+              rect.y >= modalRect.top &&
+              rect.y <= modalRect.bottom
+            )
+          })
+        case 'menu':
+          // 菜单区域内的元素
+          const menus = document.querySelectorAll('[role="menu"], [role="menubar"], .menu, .dropdown-menu, .context-menu')
+          return Array.from(menus).some(menu => {
+            const menuRect = menu.getBoundingClientRect()
+            return (
+              rect.x >= menuRect.left &&
+              rect.x <= menuRect.right &&
+              rect.y >= menuRect.top &&
+              rect.y <= menuRect.bottom
+            )
+          })
         default:
           return true
       }
@@ -427,6 +639,8 @@ export function requestMoreElements(params: {
   // 按元素类型筛选
   if (params.elementType && params.elementType !== 'all') {
     elements = elements.filter(el => {
+      const originalEl = elementMap.get(el.id)
+      
       switch (params.elementType) {
         case 'input':
           return el.tag === 'input' || el.tag === 'textarea'
@@ -436,6 +650,26 @@ export function requestMoreElements(params: {
           return el.tag === 'a'
         case 'select':
           return el.tag === 'select'
+        case 'tab':
+          // Tab页签
+          return originalEl ? isTabElement(el, originalEl) : false
+        case 'menu':
+          // 菜单项
+          if (!originalEl) return false
+          return originalEl.getAttribute('role') === 'menuitem' ||
+                 originalEl.classList.contains('menu-item') ||
+                 originalEl.classList.contains('dropdown-item')
+        case 'list':
+          // 列表项
+          return el.tag === 'li' || 
+                 (originalEl?.getAttribute('role') === 'listitem') ||
+                 originalEl?.classList.contains('list-group-item')
+        case 'radio':
+          // 单选框
+          return el.type === 'radio' || originalEl?.getAttribute('role') === 'radio'
+        case 'checkbox':
+          // 复选框
+          return el.type === 'checkbox' || originalEl?.getAttribute('role') === 'checkbox'
         default:
           return true
       }
