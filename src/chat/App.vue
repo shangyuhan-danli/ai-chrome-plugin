@@ -1014,21 +1014,13 @@ const sendStreamMessage = async (content: string) => {
           streamMessages.value[messageIndex].isComplete = false
           // 所有工具都需要用户确认，不自动执行
         } else {
-          // 计算需要从 streamingContent 中排除的特殊内容
-          let textContent = streamingContent.value
+          // 判断是否有特殊内容块（answer 或 question）
+          const hasSpecialBlocks = lastAnswer || lastQuestion
 
-          // 如果有 answer 或 question，它们可能被包含在 streamingContent 中
-          // 需要将它们分离出来单独显示
-          if (lastAnswer && textContent.includes(lastAnswer)) {
-            textContent = textContent.replace(lastAnswer, '').trim()
-          }
-          if (lastQuestion && textContent.includes(lastQuestion)) {
-            textContent = textContent.replace(lastQuestion, '').trim()
-          }
-
-          // 添加普通文本内容（排除 think、answer、question 后的内容）
-          if (textContent && !lastThink) {
-            streamMessages.value[messageIndex].blocks.push({ type: 'text', text: textContent })
+          // 如果有特殊内容块，不显示原始 content（因为 content 包含未解析的原始格式）
+          // 如果没有特殊内容块且没有 think，才显示普通文本
+          if (!hasSpecialBlocks && !lastThink && streamingContent.value) {
+            streamMessages.value[messageIndex].blocks.push({ type: 'text', text: streamingContent.value })
           }
           streamMessages.value[messageIndex].isComplete = true
         }
