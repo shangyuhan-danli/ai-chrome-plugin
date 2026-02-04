@@ -511,6 +511,108 @@ class BrowserToolService {
         return { success: response?.success || false }
       }
     })
+
+    // summarize_page - 页面总结
+    this.register({
+      name: 'summarize_page',
+      description: '提取并总结当前页面的主要内容，包括标题、正文、摘要等。适用于需要理解页面整体内容的场景。',
+      parameters: {
+        type: 'object',
+        properties: {
+          includeStructuredData: {
+            type: 'boolean',
+            description: '是否包含结构化数据（JSON-LD, Microdata）'
+          },
+          includeMetadata: {
+            type: 'boolean',
+            description: '是否包含页面元数据（meta标签）'
+          }
+        }
+      },
+      execute: async (args: { includeStructuredData?: boolean; includeMetadata?: boolean }, tabId: number) => {
+        const response = await chrome.tabs.sendMessage(tabId, {
+          type: 'SUMMARIZE_PAGE',
+          payload: args
+        })
+        return response?.data || { success: false, error: '页面总结失败' }
+      }
+    })
+
+    // extract_data - 数据提取
+    this.register({
+      name: 'extract_data',
+      description: '从页面中提取结构化数据，支持表格、列表、卡片等多种格式。可以提取产品信息、文章列表、搜索结果等。',
+      parameters: {
+        type: 'object',
+        properties: {
+          selector: {
+            type: 'string',
+            description: 'CSS选择器，指定要提取的区域（可选）'
+          },
+          dataType: {
+            type: 'string',
+            enum: ['table', 'list', 'cards', 'form', 'all'],
+            description: '数据类型: table(表格), list(列表), cards(卡片), form(表单), all(所有)'
+          },
+          fields: {
+            type: 'array',
+            description: '要提取的字段名列表（可选，用于表格）',
+            items: { type: 'string' }
+          }
+        }
+      },
+      execute: async (args: { selector?: string; dataType?: string; fields?: string[] }, tabId: number) => {
+        const response = await chrome.tabs.sendMessage(tabId, {
+          type: 'EXTRACT_DATA',
+          payload: args
+        })
+        return response?.data || { success: false, error: '数据提取失败' }
+      }
+    })
+
+    // ⚠️ PageScript 功能已禁用，等待安全方案重新设计
+    // execute_page_script - 执行 PageScript
+    // this.register({
+    //   name: 'execute_page_script',
+    //   description: '执行预定义的 PageScript（特定页面的自动化脚本）。PageScript 是经过验证的安全脚本，可以针对特定网站提供强大的自动化能力。',
+    //   parameters: {
+    //     type: 'object',
+    //     properties: {
+    //       scriptId: {
+    //         type: 'string',
+    //         description: 'PageScript ID'
+    //       },
+    //       context: {
+    //         type: 'object',
+    //         description: '传递给 PageScript 的上下文数据'
+    //       }
+    //     },
+    //     required: ['scriptId']
+    //   },
+    //   execute: async (args: { scriptId: string; context?: Record<string, any> }, tabId: number) => {
+    //     const response = await chrome.tabs.sendMessage(tabId, {
+    //       type: 'EXECUTE_PAGE_SCRIPT',
+    //       payload: args
+    //     })
+    //     return response?.data || { success: false, error: 'PageScript 执行失败' }
+    //   }
+    // })
+
+    // list_page_scripts - 列出可用 PageScripts
+    // this.register({
+    //   name: 'list_page_scripts',
+    //   description: '列出当前页面可用的 PageScripts。',
+    //   parameters: {
+    //     type: 'object',
+    //     properties: {}
+    //   },
+    //   execute: async (_args: any, tabId: number) => {
+    //     const response = await chrome.tabs.sendMessage(tabId, {
+    //       type: 'LIST_PAGE_SCRIPTS'
+    //     })
+    //     return response?.data || { success: false, error: '获取 PageScripts 失败' }
+    //   }
+    // })
   }
 
   /**

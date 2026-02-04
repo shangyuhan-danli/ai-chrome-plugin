@@ -2,6 +2,10 @@ import './style.css'
 import './actionStyles.css'
 import { getPageContext, requestMoreElements, getElementById } from './elementCollector'
 import { executeAction, executeBatchActions, clearAllStyles } from './actionExecutor'
+import { summarizePage, extractStructuredData, extractMetadata } from './pageSummarizer'
+import { extractData } from './dataExtractor'
+// ⚠️ PageScript 功能已禁用，等待安全方案重新设计
+// import { pageScriptManager } from './pageScriptManager'
 import type { PageAction } from '../utils/pageActionTypes'
 
 let chatFrame: HTMLIFrameElement | null = null
@@ -527,6 +531,70 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     })
     return true // 异步响应
   }
+  else if (message.type === 'SUMMARIZE_PAGE') {
+    // 页面总结
+    const args = message.payload || {}
+    const summary = summarizePage()
+    const result: any = { success: !!summary }
+    
+    if (summary) {
+      result.summary = summary
+      
+      if (args.includeStructuredData) {
+        result.structuredData = extractStructuredData()
+      }
+      
+      if (args.includeMetadata) {
+        result.metadata = extractMetadata()
+      }
+    } else {
+      result.error = '无法提取页面内容'
+    }
+    
+    sendResponse({ success: true, data: result })
+  }
+  else if (message.type === 'EXTRACT_DATA') {
+    // 数据提取
+    const args = message.payload || {}
+    const data = extractData(args)
+    sendResponse({ success: true, data })
+  }
+  // ⚠️ PageScript 功能已禁用，等待安全方案重新设计
+  // else if (message.type === 'EXECUTE_SKILL') {
+  //   // 执行 PageScript
+  //   const { skillId, context } = message.payload || {}
+  //   const pageInfo = getPageInfo()
+  //   const skillContext = {
+  //     url: pageInfo.url,
+  //     pageTitle: pageInfo.title,
+  //     ...context
+  //   }
+  //   pageScriptManager.executeSkill(skillId, skillContext).then(result => {
+  //     sendResponse({ success: true, data: result })
+  //   }).catch(error => {
+  //     sendResponse({ success: false, error: String(error) })
+  //   })
+  //   return true // 异步响应
+  // }
+  // else if (message.type === 'LIST_SKILLS') {
+  //   // 列出可用 PageScripts
+  //   const pageInfo = getPageInfo()
+  //   const matchingSkills = pageScriptManager.findMatchingSkills(pageInfo.url)
+  //   sendResponse({
+  //     success: true,
+  //     data: {
+  //       skills: matchingSkills.map(skill => ({
+  //         id: skill.id,
+  //         name: skill.name,
+  //         description: skill.description,
+  //         version: skill.version,
+  //         author: skill.author,
+  //         verified: skill.verified
+  //       })),
+  //       count: matchingSkills.length
+  //     }
+  //   })
+  // }
   return true
 })
 

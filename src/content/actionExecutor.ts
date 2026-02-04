@@ -1,6 +1,7 @@
 // 操作执行器 - 执行具体的 DOM 操作
-import type { PageAction, ActionResult, BatchActionResult } from '../utils/pageActionTypes'
+import type { PageAction, ActionResult, BatchActionResult, PageElement } from '../utils/pageActionTypes'
 import { getElementById } from './elementCollector'
+import { smartLocateElement, validateElement } from './elementLocator'
 
 /**
  * 延迟函数
@@ -43,7 +44,7 @@ function simulateClick(el: HTMLElement): void {
 }
 
 /**
- * 填充输入框
+ * 填充输入框（改进版：支持智能重定位）
  */
 async function fillInput(target: PageAction['target'], value?: string): Promise<ActionResult> {
   console.log('[ActionExecutor] fillInput 调用:', { target, value })
@@ -52,21 +53,45 @@ async function fillInput(target: PageAction['target'], value?: string): Promise<
     return { success: false, message: '未提供填充值', error: 'NO_VALUE' }
   }
 
-  const el = target.elementId ? getElementById(target.elementId) : null
-  console.log('[ActionExecutor] 通过 elementId 查找结果:', el ? `<${el.tagName}>` : 'null')
+  // 首先尝试通过 elementId 查找
+  let el = target.elementId ? getElementById(target.elementId) : null
+  let elementInfo: PageElement | null = null
 
+  // 如果 elementId 查找失败，尝试智能重定位
   if (!el) {
+    console.log('[ActionExecutor] elementId 查找失败，尝试智能重定位')
+    
     // 尝试使用 selector
     if (target.selector) {
-      const selectorEl = document.querySelector(target.selector) as HTMLElement
-      if (selectorEl && (selectorEl.tagName === 'INPUT' || selectorEl.tagName === 'TEXTAREA')) {
-        simulateInput(selectorEl as HTMLInputElement | HTMLTextAreaElement, value)
-        return { success: true, message: `已填充: ${value}` }
+      el = document.querySelector(target.selector) as HTMLElement
+    }
+
+    // 如果 selector 也失败，使用描述信息重定位
+    if (!el && target.description) {
+      // 这里需要从 elementCollector 获取原始元素信息
+      // 暂时使用描述文本进行语义匹配
+      const inputs = Array.from(document.querySelectorAll('input, textarea')) as HTMLElement[]
+      for (const input of inputs) {
+        const text = [
+          (input as HTMLInputElement).placeholder,
+          input.getAttribute('aria-label'),
+          (input as HTMLInputElement).name,
+          getAssociatedLabelText(input)
+        ].filter(Boolean).join(' ').toLowerCase()
+        
+        if (text.includes(target.description.toLowerCase())) {
+          el = input
+          break
+        }
       }
     }
+  }
+
+  if (!el) {
     return { success: false, message: '未找到目标元素', error: 'ELEMENT_NOT_FOUND' }
   }
 
+  // 验证元素类型
   if (el.tagName !== 'INPUT' && el.tagName !== 'TEXTAREA') {
     // 检查是否是 contenteditable
     if (el.getAttribute('contenteditable') === 'true') {
@@ -78,8 +103,34 @@ async function fillInput(target: PageAction['target'], value?: string): Promise<
     return { success: false, message: '目标元素不是输入框', error: 'INVALID_ELEMENT' }
   }
 
+  // 验证元素（如果提供了 elementInfo）
+  if (elementInfo) {
+    const validation = validateElement(el, elementInfo)
+    if (!validation.valid && validation.confidence < 50) {
+      console.warn(`[ActionExecutor] 元素验证置信度较低: ${validation.confidence}%, ${validation.reason}`)
+    }
+  }
+
   simulateInput(el as HTMLInputElement | HTMLTextAreaElement, value)
   return { success: true, message: `已填充: ${value}` }
+}
+
+/**
+ * 获取关联的 label 文本
+ */
+function getAssociatedLabelText(el: HTMLElement): string | undefined {
+  if (el.id) {
+    const label = document.querySelector(`label[for="${el.id}"]`)
+    if (label) return label.textContent?.trim()
+  }
+  const parentLabel = el.closest('label')
+  if (parentLabel) {
+    const clone = parentLabel.cloneNode(true) as HTMLElement
+    const inputs = clone.querySelectorAll('input, select, textarea')
+    inputs.forEach(input => input.remove())
+    return clone.textContent?.trim()
+  }
+  return undefined
 }
 
 /**

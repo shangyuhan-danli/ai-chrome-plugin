@@ -563,16 +563,41 @@ function extractKeywords(message: string): string[] {
 }
 
 /**
- * 计算元素与关键词的相关性得分
+ * 计算元素与关键词的相关性得分（改进版：语义相似度）
  */
 function calculateScore(el: PageElement, keywords: string[], strategy: FilterStrategy): number {
   let score = 0
 
-  // 关键词匹配
-  const text = [el.text, el.placeholder, el.label, el.ariaLabel, el.name].filter(Boolean).join(' ')
+  // 收集所有文本信息
+  const textParts = [
+    el.text,
+    el.placeholder,
+    el.label,
+    el.ariaLabel,
+    el.name,
+    el.context?.sectionTitle,
+    el.context?.formTitle,
+    el.context?.rowLabel
+  ].filter(Boolean) as string[]
+  
+  const fullText = textParts.join(' ').toLowerCase()
+
+  // 改进的关键词匹配：使用语义相似度
   for (const kw of keywords) {
-    if (text.toLowerCase().includes(kw.toLowerCase())) {
+    const kwLower = kw.toLowerCase()
+    
+    // 精确匹配（最高分）
+    if (fullText === kwLower) {
+      score += 20
+    }
+    // 包含匹配
+    else if (fullText.includes(kwLower)) {
       score += 10
+    }
+    // 部分匹配（字符级）
+    else if (kwLower.length > 2) {
+      const similarity = calculateTextSimilarity(fullText, kwLower)
+      score += similarity * 5
     }
   }
 
@@ -595,6 +620,14 @@ function calculateScore(el: PageElement, keywords: string[], strategy: FilterStr
     score += strategy.priorities.tab
   }
 
+  // 上下文信息加分（帮助区分相似元素）
+  if (el.context) {
+    if (el.context.sectionTitle) score += 3
+    if (el.context.formTitle) score += 3
+    if (el.context.parentChain && el.context.parentChain.length > 0) score += 2
+    if (el.context.rowLabel) score += 2
+  }
+
   // 视口权重
   if (el.visible) {
     score += strategy.viewport.visible
@@ -608,6 +641,26 @@ function calculateScore(el: PageElement, keywords: string[], strategy: FilterStr
   }
 
   return score
+}
+
+/**
+ * 计算文本相似度（简单的编辑距离算法）
+ */
+function calculateTextSimilarity(text1: string, text2: string): number {
+  // 如果其中一个为空，返回0
+  if (!text1 || !text2) return 0
+
+  // 简单的字符重叠度计算
+  const chars1 = new Set(text1.split(''))
+  const chars2 = new Set(text2.split(''))
+  
+  let common = 0
+  chars1.forEach(char => {
+    if (chars2.has(char)) common++
+  })
+
+  const total = Math.max(chars1.size, chars2.size)
+  return total > 0 ? common / total : 0
 }
 
 /**
