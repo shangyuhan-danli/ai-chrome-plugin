@@ -474,12 +474,25 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   // ========== 页面操作相关消息处理 ==========
   else if (message.type === 'GET_PAGE_CONTEXT') {
-    // 获取页面上下文（包含可交互元素）
-    const userMessage = message.payload?.userMessage || ''
-    console.log('[Content] GET_PAGE_CONTEXT 被调用，userMessage:', userMessage)
-    const context = getPageContext(userMessage)
-    console.log('[Content] 返回的 context 元素数量:', context.elements?.length)
-    sendResponse({ success: true, data: context })
+    // 获取页面上下文（包含可交互元素）- 同步处理
+    try {
+      const userMessage = message.payload?.userMessage || ''
+      console.log('[Content] GET_PAGE_CONTEXT 被调用，userMessage:', userMessage, '当前URL:', window.location.href)
+      const context = getPageContext(userMessage)
+      console.log('[Content] 返回的 context:', {
+        url: context.url,
+        title: context.title,
+        elementsCount: context.elements?.length || 0,
+        selectedText: context.selectedText ? '有选中文本' : '无选中文本'
+      })
+      const response = { success: true, data: context }
+      sendResponse(response)
+      return // 同步响应，立即返回，不执行后面的 return true
+    } catch (error) {
+      console.error('[Content] GET_PAGE_CONTEXT 处理失败:', error)
+      sendResponse({ success: false, error: String(error) })
+      return // 同步响应，立即返回
+    }
   }
   else if (message.type === 'REQUEST_MORE_ELEMENTS') {
     // 请求更多元素

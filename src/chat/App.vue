@@ -792,7 +792,21 @@ const getPageContext = async (userMessage: string = ''): Promise<PageContext | n
       }
     }
 
-    if (response?.success) {
+    // 检查响应是否有效
+    if (!response) {
+      console.warn('[getPageContext] Content script 返回 undefined，可能未正确响应')
+      // 回退到已保存的页面信息
+      if (currentPageUrl.value) {
+        return {
+          url: currentPageUrl.value,
+          title: currentPageTitle.value || '',
+          elements: []
+        }
+      }
+      return null
+    }
+
+    if (response.success) {
       console.log('[getPageContext] 成功获取页面上下文，元素数量:', response.data?.elements?.length || 0)
       cachedPageContext.value = response.data
       return response.data
@@ -806,6 +820,7 @@ const getPageContext = async (userMessage: string = ''): Promise<PageContext | n
           elements: []
         }
       }
+      return null
     }
   } catch (error) {
     console.error('[getPageContext] 获取页面上下文失败:', error)
