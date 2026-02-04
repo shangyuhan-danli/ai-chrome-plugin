@@ -715,27 +715,108 @@ const toggleJsonCollapse = (event: Event) => {
 
 // 获取当前页面上下文
 const getPageContext = async (userMessage: string = ''): Promise<PageContext | null> => {
-  // 只有在 iframe 中才能获取页面上下文
+  // 如果不在 iframe 中，使用已保存的页面信息构建基本上下文
   if (!isInIframe.value) {
+    console.log('[getPageContext] 聊天窗口不在 iframe 中，使用已保存的页面信息')
+    if (currentPageUrl.value) {
+      return {
+        url: currentPageUrl.value,
+        title: currentPageTitle.value || '',
+        elements: []
+      }
+    }
+    console.warn('[getPageContext] 没有可用的页面信息')
     return null
   }
 
   try {
     // 获取当前活动标签页
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
-    if (!tab?.id) return null
+    if (!tab?.id) {
+      console.warn('[getPageContext] 无法获取活动标签页')
+      // 回退到已保存的页面信息
+      if (currentPageUrl.value) {
+        return {
+          url: currentPageUrl.value,
+          title: currentPageTitle.value || '',
+          elements: []
+        }
+      }
+      return null
+    }
 
-    const response = await chrome.tabs.sendMessage(tab.id, {
-      type: 'GET_PAGE_CONTEXT',
-      payload: { userMessage }
-    })
+    console.log('[getPageContext] 尝试获取页面上下文，标签页:', tab.url)
+
+    // 尝试发送消息，如果失败则尝试注入 content script
+    let response
+    try {
+      response = await chrome.tabs.sendMessage(tab.id, {
+        type: 'GET_PAGE_CONTEXT',
+        payload: { userMessage }
+      })
+    } catch (error: any) {
+      // 如果消息发送失败，可能是 content script 未注入，尝试注入
+      if (error?.message?.includes('Could not establish connection') ||
+          error?.message?.includes('Receiving end does not exist')) {
+        console.log('[getPageContext] Content script 未注入，尝试注入...')
+        try {
+          await chrome.scripting.executeScript({
+            target: { tabId: tab.id },
+            files: ['content.js']
+          })
+          await chrome.scripting.insertCSS({
+            target: { tabId: tab.id },
+            files: ['content.css']
+          })
+          // 等待 content script 初始化
+          await new Promise(resolve => setTimeout(resolve, 200))
+          // 重试发送消息
+          response = await chrome.tabs.sendMessage(tab.id, {
+            type: 'GET_PAGE_CONTEXT',
+            payload: { userMessage }
+          })
+        } catch (injectError) {
+          console.error('[getPageContext] 注入 content script 失败:', injectError)
+          // 回退到已保存的页面信息
+          if (currentPageUrl.value) {
+            return {
+              url: currentPageUrl.value,
+              title: currentPageTitle.value || '',
+              elements: []
+            }
+          }
+          return null
+        }
+      } else {
+        throw error
+      }
+    }
 
     if (response?.success) {
+      console.log('[getPageContext] 成功获取页面上下文，元素数量:', response.data?.elements?.length || 0)
       cachedPageContext.value = response.data
       return response.data
+    } else {
+      console.warn('[getPageContext] Content script 返回失败:', response)
+      // 回退到已保存的页面信息
+      if (currentPageUrl.value) {
+        return {
+          url: currentPageUrl.value,
+          title: currentPageTitle.value || '',
+          elements: []
+        }
+      }
     }
   } catch (error) {
-    console.error('获取页面上下文失败:', error)
+    console.error('[getPageContext] 获取页面上下文失败:', error)
+    // 回退到已保存的页面信息
+    if (currentPageUrl.value) {
+      return {
+        url: currentPageUrl.value,
+        title: currentPageTitle.value || '',
+        elements: []
+      }
+    }
   }
   return null
 }
