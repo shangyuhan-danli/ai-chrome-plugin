@@ -21,6 +21,14 @@ export interface PageElement {
   }
   visible: boolean        // 是否可见
   disabled: boolean       // 是否禁用
+  // 新增：上下文信息
+  context?: {
+    sectionTitle?: string     // 所在区域标题（如 fieldset legend、h2/h3 标题）
+    formTitle?: string        // 所属表单标题
+    nearElements?: string[]   // 邻近元素描述（前后各1-2个）
+    parentChain?: string[]    // 父级容器链（如 ["表单:个人信息", "区域:联系方式"]）
+    rowLabel?: string         // 同行/同组的标签（如表格单元格）
+  }
 }
 
 /**
@@ -28,7 +36,13 @@ export interface PageElement {
  */
 export interface CompactElement {
   id: string
-  desc: string  // 合并的描述: "输入框:用户名" / "按钮:登录"
+  desc: string       // 合并的描述: "输入框:用户名" / "按钮:登录"
+  // 新增：上下文信息（可选，用于复杂场景）
+  ctx?: {
+    section?: string  // 区域/分组标题
+    nearby?: string   // 邻近元素简述
+    path?: string     // 路径简写
+  }
 }
 
 /**

@@ -59,9 +59,17 @@
         "url": "https://www.taobao.com",
         "title": "淘宝网 - 首页",
         "elements": [
-            {"id": "e_1706789012_abc123", "desc": "输入框:搜索(placeholder:搜索)"},
+            {
+                "id": "e_1706789012_abc123",
+                "desc": "输入框:搜索(placeholder:搜索)",
+                "ctx": {  # 上下文信息（可选，帮助 AI 区分相似元素）
+                    "section": "搜索区域",           # 所在区域/表单标题
+                    "nearby": "热门搜索, 搜索历史",   # 邻近元素描述
+                    "path": "表单:搜索表单"          # 父级容器路径
+                }
+            },
             {"id": "e_1706789012_def456", "desc": "按钮:搜索"},
-            {"id": "e_1706789012_ghi789", "desc": "链接:登录"}
+            {"id": "e_1706789012_ghi789", "desc": "链接:登录", "ctx": {"section": "用户中心"}}
         ],
         "selectedText": ""  # 用户选中的文字（可选）
     },
@@ -309,16 +317,32 @@ def generate_page_context_prompt(page_info: Optional[Dict[str, Any]]) -> str:
 
 ### 可交互元素列表
 
-以下是当前页面的可交互元素，使用 `elementId` 来定位元素：
+以下是当前页面的可交互元素，使用 `elementId` 来定位元素。
+**重要**: 当存在多个相似元素时，请参考 `上下文` 列来区分它们所在的区域或位置。
 
 """
 
     elements = page_info.get('elements', [])
     if elements:
-        prompt += "| elementId | 元素描述 |\n"
-        prompt += "|-----------|----------|\n"
+        prompt += "| elementId | 元素描述 | 上下文 |\n"
+        prompt += "|-----------|----------|--------|\n"
         for el in elements:
-            prompt += f"| `{el['id']}` | {el['desc']} |\n"
+            el_id = el.get('id', '')
+            desc = el.get('desc', '')
+
+            # 构建上下文描述
+            ctx_parts = []
+            ctx = el.get('ctx', {})
+            if ctx:
+                if ctx.get('section'):
+                    ctx_parts.append(f"区域:{ctx['section']}")
+                if ctx.get('nearby'):
+                    ctx_parts.append(f"邻近:{ctx['nearby']}")
+                if ctx.get('path'):
+                    ctx_parts.append(f"路径:{ctx['path']}")
+
+            ctx_str = '; '.join(ctx_parts) if ctx_parts else '-'
+            prompt += f"| `{el_id}` | {desc} | {ctx_str} |\n"
     else:
         prompt += "（暂无可交互元素信息，可使用 `request_more_elements` 工具获取）\n"
 
@@ -673,8 +697,8 @@ async def call_ai_model(
 {
     "success": True,
     "elements": [
-        {"id": "e_xxx", "desc": "按钮:提交"},
-        {"id": "e_yyy", "desc": "按钮:取消"}
+        {"id": "e_xxx", "desc": "按钮:提交", "ctx": {"section": "订单确认", "path": "表单:结算表单"}},
+        {"id": "e_yyy", "desc": "按钮:取消", "ctx": {"section": "订单确认"}}
     ]
 }
 ```

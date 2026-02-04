@@ -110,6 +110,230 @@ function getAssociatedLabel(el: HTMLElement): string | undefined {
 }
 
 /**
+ * 获取元素所在区域的标题（section/fieldset/h2/h3等）
+ */
+function getSectionTitle(el: HTMLElement): string | undefined {
+  // 查找最近的 fieldset legend
+  const fieldset = el.closest('fieldset')
+  if (fieldset) {
+    const legend = fieldset.querySelector('legend')
+    if (legend) {
+      return legend.textContent?.trim()
+    }
+  }
+
+  // 查找最近的 section/article/aside 的标题
+  const section = el.closest('section, article, aside, [role="region"]')
+  if (section) {
+    const heading = section.querySelector('h1, h2, h3, h4, h5, h6')
+    if (heading) {
+      return heading.textContent?.trim()
+    }
+  }
+
+  // 查找前面最近的标题（在同一个容器内）
+  const parent = el.parentElement
+  if (parent) {
+    const siblings = Array.from(parent.children)
+    const elIndex = siblings.indexOf(el)
+    // 向前查找标题
+    for (let i = elIndex - 1; i >= 0; i--) {
+      const sibling = siblings[i]
+      if (/^H[1-6]$/i.test(sibling.tagName)) {
+        return sibling.textContent?.trim()
+      }
+    }
+  }
+
+  // 查找最近带有标题类或属性的容器
+  let current: HTMLElement | null = el
+  while (current && current !== document.body) {
+    const ariaLabel = current.getAttribute('aria-label')
+    if (ariaLabel) return ariaLabel
+    
+    const title = current.getAttribute('title')
+    if (title) return title
+    
+    // 检查是否有标题相关的类名
+    const className = current.className || ''
+    if (className.includes('header') || className.includes('title') || className.includes('heading')) {
+      const text = current.textContent?.trim()
+      if (text && text.length < 100) return text
+    }
+    
+    current = current.parentElement
+  }
+
+  return undefined
+}
+
+/**
+ * 获取表单标题
+ */
+function getFormTitle(el: HTMLElement): string | undefined {
+  const form = el.closest('form')
+  if (!form) return undefined
+
+  // 查找表单内的标题
+  const heading = form.querySelector('h1, h2, h3, h4, h5, h6')
+  if (heading) {
+    return heading.textContent?.trim()
+  }
+
+  // 查找表单前的标题
+  let prev = form.previousElementSibling as HTMLElement | null
+  while (prev) {
+    if (/^H[1-6]$/i.test(prev.tagName)) {
+      return prev.textContent?.trim()
+    }
+    prev = prev.previousElementSibling as HTMLElement | null
+  }
+
+  // 查找 aria-label
+  const ariaLabel = form.getAttribute('aria-label')
+  if (ariaLabel) return ariaLabel
+
+  return undefined
+}
+
+/**
+ * 获取邻近元素描述（前后各1-2个）
+ */
+function getNearElements(el: HTMLElement): string[] | undefined {
+  const parent = el.parentElement
+  if (!parent) return undefined
+
+  const siblings = Array.from(parent.children).filter(
+    child => child !== el && (child as HTMLElement).textContent?.trim()
+  ) as HTMLElement[]
+  
+  if (siblings.length === 0) return undefined
+
+  const elIndex = Array.from(parent.children).indexOf(el)
+  const nearElements: string[] = []
+
+  // 向前找1-2个
+  for (let i = elIndex - 1; i >= Math.max(0, elIndex - 2); i--) {
+    const sibling = parent.children[i] as HTMLElement
+    const text = sibling.textContent?.trim()
+    if (text && text.length < 50) {
+      nearElements.unshift(text)
+    }
+  }
+
+  // 向后找1-2个
+  for (let i = elIndex + 1; i < Math.min(parent.children.length, elIndex + 3); i++) {
+    const sibling = parent.children[i] as HTMLElement
+    const text = sibling.textContent?.trim()
+    if (text && text.length < 50) {
+      nearElements.push(text)
+    }
+  }
+
+  return nearElements.length > 0 ? nearElements : undefined
+}
+
+/**
+ * 获取父级容器链
+ */
+function getParentChain(el: HTMLElement): string[] | undefined {
+  const chain: string[] = []
+  let current: HTMLElement | null = el.parentElement
+
+  while (current && current !== document.body) {
+    let label: string | undefined
+
+    // 尝试获取容器的标识
+    const tag = current.tagName.toLowerCase()
+    
+    if (tag === 'form') {
+      const formTitle = current.querySelector('h1, h2, h3, h4, h5, h6')?.textContent?.trim() ||
+                       current.getAttribute('aria-label') ||
+                       current.getAttribute('name') ||
+                       current.id
+      label = formTitle ? `表单:${formTitle}` : '表单'
+    } else if (tag === 'fieldset') {
+      const legend = current.querySelector('legend')?.textContent?.trim()
+      label = legend ? `区域:${legend}` : '区域'
+    } else if (tag === 'section' || current.getAttribute('role') === 'region') {
+      const heading = current.querySelector('h1, h2, h3, h4, h5, h6')?.textContent?.trim()
+      label = heading ? `分组:${heading}` : '分组'
+    } else if (tag === 'tr') {
+      // 表格行 - 获取第一个单元格的文本作为行标识
+      const firstCell = current.querySelector('td, th')
+      if (firstCell) {
+        const cellText = firstCell.textContent?.trim()
+        if (cellText && cellText.length < 30) {
+          label = `行:${cellText}`
+        }
+      }
+    } else if (tag === 'td' || tag === 'th') {
+      // 表格单元格 - 获取表头信息
+      const table = current.closest('table')
+      if (table) {
+        const row = current.closest('tr')
+        const cellIndex = Array.from(row?.children || []).indexOf(current)
+        const headerRow = table.querySelector('thead tr') || table.querySelector('tr')
+        if (headerRow) {
+          const headers = headerRow.querySelectorAll('th')
+          if (headers[cellIndex]) {
+            label = `列:${headers[cellIndex].textContent?.trim()}`
+          }
+        }
+      }
+    }
+
+    if (label && !chain.includes(label)) {
+      chain.unshift(label)
+    }
+
+    // 最多收集3层
+    if (chain.length >= 3) break
+    
+    current = current.parentElement
+  }
+
+  return chain.length > 0 ? chain : undefined
+}
+
+/**
+ * 获取同行/同组标签（用于表格布局）
+ */
+function getRowLabel(el: HTMLElement): string | undefined {
+  const parent = el.parentElement
+  if (!parent) return undefined
+
+  // 如果在表格单元格中
+  if (parent.tagName === 'TD' || parent.tagName === 'TH') {
+    const row = parent.closest('tr')
+    if (row) {
+      // 获取同行第一个单元格作为标识
+      const firstCell = row.querySelector('td, th')
+      if (firstCell && firstCell !== parent) {
+        const text = firstCell.textContent?.trim()
+        if (text && text.length < 30) {
+          return text
+        }
+      }
+    }
+  }
+
+  // 如果在 flex/grid 布局中，查找前面的 label
+  const siblings = Array.from(parent.children)
+  const elIndex = siblings.indexOf(el)
+  
+  for (let i = elIndex - 1; i >= 0; i--) {
+    const sibling = siblings[i] as HTMLElement
+    const text = sibling.textContent?.trim()
+    if (text && text.length < 30 && !sibling.querySelector('input, select, textarea')) {
+      return text
+    }
+  }
+
+  return undefined
+}
+
+/**
  * 获取元素的可见文本
  */
 function getElementText(el: HTMLElement): string | undefined {
@@ -184,6 +408,24 @@ function collectElementInfo(el: HTMLElement): PageElement | null {
   element.text = getElementText(el)
   element.label = getAssociatedLabel(el)
   element.ariaLabel = el.getAttribute('aria-label') || undefined
+
+  // 收集上下文信息 - 帮助 AI 更准确地定位元素
+  const sectionTitle = getSectionTitle(el)
+  const formTitle = getFormTitle(el)
+  const nearElements = getNearElements(el)
+  const parentChain = getParentChain(el)
+  const rowLabel = getRowLabel(el)
+
+  // 只有存在上下文信息时才添加
+  if (sectionTitle || formTitle || nearElements || parentChain || rowLabel) {
+    element.context = {
+      sectionTitle,
+      formTitle,
+      nearElements,
+      parentChain,
+      rowLabel
+    }
+  }
 
   return element
 }
@@ -556,10 +798,47 @@ export function toCompactFormat(elements: PageElement[]): CompactElement[] {
   return elements.map(el => {
     // 从 elementMap 获取原始 DOM 元素，以便生成更准确的描述
     const originalEl = elementMap.get(el.id)
-    return {
+
+    const compact: CompactElement = {
       id: el.id,
       desc: generateElementDescription(el, originalEl)
     }
+
+    // 添加上下文信息 - 帮助 AI 区分相似元素
+    if (el.context) {
+      const ctx: CompactElement['ctx'] = {}
+
+      // 区域/分组标题（优先使用 sectionTitle，其次 formTitle）
+      if (el.context.sectionTitle) {
+        ctx.section = el.context.sectionTitle
+      } else if (el.context.formTitle) {
+        ctx.section = el.context.formTitle
+      }
+
+      // 邻近元素简述（取前2个，用逗号连接）
+      if (el.context.nearElements && el.context.nearElements.length > 0) {
+        ctx.nearby = el.context.nearElements.slice(0, 2).join(', ')
+      }
+
+      // 同行标签（对于表格布局特别有用）
+      if (el.context.rowLabel) {
+        ctx.nearby = ctx.nearby
+          ? `${el.context.rowLabel} | ${ctx.nearby}`
+          : el.context.rowLabel
+      }
+
+      // 路径简写（父级容器链）
+      if (el.context.parentChain && el.context.parentChain.length > 0) {
+        ctx.path = el.context.parentChain.join(' > ')
+      }
+
+      // 只有存在有效上下文时才添加
+      if (Object.keys(ctx).length > 0) {
+        compact.ctx = ctx
+      }
+    }
+
+    return compact
   })
 }
 
