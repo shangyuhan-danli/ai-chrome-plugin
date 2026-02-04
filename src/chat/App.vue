@@ -387,7 +387,12 @@
           rows="1"
           ref="inputArea"
         ></textarea>
-        <button class="send-btn" @click="sendMessage" :disabled="!inputMessage.trim() || isLoading">
+        <button v-if="isStreaming" class="stop-btn" @click="stopStreaming" title="停止生成">
+          <svg viewBox="0 0 24 24" fill="currentColor">
+            <rect x="6" y="6" width="12" height="12" rx="2" />
+          </svg>
+        </button>
+        <button v-else class="send-btn" @click="sendMessage" :disabled="!inputMessage.trim() || isLoading">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
             <line x1="22" y1="2" x2="11" y2="13" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
             <polygon points="22 2 15 22 11 13 2 9 22 2" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -483,6 +488,7 @@ const currentModel = ref('gpt-3.5-turbo')
 // 流式响应相关
 const streamingContent = ref('')
 const isStreaming = ref(false)
+const currentPort = ref<chrome.runtime.Port | null>(null)
 
 // 页面上下文缓存
 const cachedPageContext = ref<PageContext | null>(null)
@@ -1164,6 +1170,7 @@ const sendStreamMessage = async (content: string) => {
 
   try {
     const port = chrome.runtime.connect({ name: 'chat-stream' })
+    currentPort.value = port
 
     port.onMessage.addListener((msg) => {
       // 调试：打印收到的消息
@@ -1258,6 +1265,7 @@ const sendStreamMessage = async (content: string) => {
         }
 
         port.disconnect()
+        currentPort.value = null
         nextTick(scrollToBottom)
       } else if (msg.type === 'error') {
         console.error('流式响应错误:', msg.error)
@@ -1267,6 +1275,7 @@ const sendStreamMessage = async (content: string) => {
         }
         isStreaming.value = false
         port.disconnect()
+        currentPort.value = null
       }
     })
 
@@ -1293,6 +1302,33 @@ const sendStreamMessage = async (content: string) => {
       textBlock.text = `发送失败: ${error}`
     }
     isStreaming.value = false
+    currentPort.value = null
+  }
+}
+
+// 停止流式响应
+const stopStreaming = () => {
+  if (currentPort.value) {
+    currentPort.value.disconnect()
+    currentPort.value = null
+  }
+  isStreaming.value = false
+
+  // 标记最后一条消息为已完成，并保留当前内容
+  if (streamMessages.value.length > 0) {
+    const lastMsg = streamMessages.value[streamMessages.value.length - 1]
+    if (lastMsg.role === 'assistant') {
+      // 如果有流式内容，确保显示
+      if (streamingContent.value) {
+        const textBlock = lastMsg.blocks.find(b => b.type === 'text')
+        if (textBlock && textBlock.type === 'text') {
+          textBlock.text = streamingContent.value + ' [已停止]'
+        } else if (lastMsg.blocks.length === 0) {
+          lastMsg.blocks.push({ type: 'text', text: streamingContent.value + ' [已停止]' })
+        }
+      }
+      lastMsg.isComplete = true
+    }
   }
 }
 
@@ -2911,6 +2947,38 @@ const cancelDelete = () => {
   width: 18px;
   height: 18px;
   stroke: white;
+}
+
+/* 停止按钮样式 */
+.stop-btn {
+  width: 40px;
+  height: 40px;
+  border: none;
+  background: #ef4444;
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--transition-base);
+  flex-shrink: 0;
+  box-shadow: var(--shadow-sm);
+}
+
+.stop-btn:hover {
+  background: #dc2626;
+  box-shadow: 0 0 12px rgba(239, 68, 68, 0.4);
+  transform: translateY(-2px);
+}
+
+.stop-btn:active {
+  transform: translateY(0);
+}
+
+.stop-btn svg {
+  width: 16px;
+  height: 16px;
+  fill: white;
 }
 
 /* Agent 选择器样式 */
