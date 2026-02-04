@@ -514,6 +514,8 @@ onMounted(async () => {
   const sid = urlParams.get('sessionId')
   if (sid) {
     currentSessionId.value = parseInt(sid)
+    // 只有当 URL 中有 sessionId 时才加载历史消息
+    await loadMessages()
   }
 
   // 获取当前页面信息
@@ -521,9 +523,6 @@ onMounted(async () => {
   const pageTitle = urlParams.get('pageTitle')
   if (pageUrl) currentPageUrl.value = decodeURIComponent(pageUrl)
   if (pageTitle) currentPageTitle.value = decodeURIComponent(pageTitle)
-
-  // 加载历史消息
-  await loadMessages()
 
   // 加载 Agent 列表并进行意图识别
   await loadAgents()
@@ -690,16 +689,37 @@ const formatSessionTime = (timestamp: number): string => {
 }
 
 const loadMessages = async () => {
+  if (!currentSessionId.value) {
+    streamMessages.value = []
+    return
+  }
+  
   const response = await chrome.runtime.sendMessage({
     type: 'GET_MESSAGES',
     payload: { sessionId: currentSessionId.value }
   })
-  if (response.success) {
-    streamMessages.value = response.data.map((msg: any) => ({
-      ...msg,
-      blocks: msg.blocks || [{ type: 'text', text: msg.content }]
-    }))
+  if (response.success && response.data) {
+    streamMessages.value = response.data.map((msg: any) => {
+      // 确保消息有正确的格式
+      let blocks = msg.blocks
+      if (!blocks || !Array.isArray(blocks) || blocks.length === 0) {
+        // 如果没有 blocks，从 content 创建
+        if (msg.content) {
+          blocks = [{ type: 'text', text: msg.content }]
+        } else {
+          blocks = []
+        }
+      }
+      return {
+        ...msg,
+        blocks: blocks,
+        id: msg.id || msg.createdAt || Date.now(),
+        createdAt: msg.createdAt || Date.now()
+      }
+    })
     nextTick(scrollToBottom)
+  } else {
+    streamMessages.value = []
   }
 }
 
@@ -1957,6 +1977,11 @@ const cancelDelete = () => {
   position: relative;
   z-index: 100;
   overflow: visible;
+}
+
+.chat-header .header-right {
+  position: relative;
+  z-index: 10001;
 }
 
 .header-left {
@@ -3400,19 +3425,21 @@ const cancelDelete = () => {
 /* 会话选择器样式 */
 .session-selector {
   position: relative;
+  z-index: 10000;
 }
 
 .session-dropdown-menu {
   position: absolute;
-  top: 36px;
+  top: calc(100% + 8px);
   right: 0;
   width: 320px;
   background: var(--surface-primary);
   border: 1px solid var(--border-primary);
   border-radius: var(--radius-lg);
   box-shadow: 0 10px 40px rgba(0, 0, 0, 0.15);
-  z-index: 1000;
+  z-index: 10000;
   overflow: hidden;
+  max-height: 400px;
 }
 
 .session-dropdown-header {
