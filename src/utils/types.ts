@@ -65,7 +65,7 @@ export interface StreamResponse {
 }
 
 // 流式输出内容块类型
-export type ContentBlockType = 'text' | 'tool_use' | 'summary' | 'question'
+export type ContentBlockType = 'text' | 'tool_use' | 'tool_result' | 'summary' | 'question'
 
 // 文本内容块
 export interface TextBlock {
@@ -94,8 +94,17 @@ export interface QuestionBlock {
   text: string
 }
 
+// 工具执行结果内容块
+export interface ToolResultBlock {
+  type: 'tool_result'
+  toolName: string
+  success: boolean
+  result: string
+  isLoading?: boolean
+}
+
 // 内容块联合类型
-export type ContentBlock = TextBlock | ToolUseBlock | SummaryBlock | QuestionBlock
+export type ContentBlock = TextBlock | ToolUseBlock | ToolResultBlock | SummaryBlock | QuestionBlock
 
 // 流式消息（包含多个内容块）
 export interface StreamMessage {

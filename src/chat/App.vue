@@ -238,6 +238,33 @@
                 <div class="question-hint">请在下方输入框回复</div>
               </div>
 
+              <!-- 工具执行结果块 -->
+              <div v-else-if="block.type === 'tool_result'" class="tool-result-block" :class="{ success: (block as ToolResultBlock).success, error: !(block as ToolResultBlock).success, loading: (block as ToolResultBlock).isLoading }">
+                <div class="tool-result-header">
+                  <span class="tool-result-icon">
+                    <svg v-if="(block as ToolResultBlock).isLoading" class="spinning" viewBox="0 0 24 24" fill="none" stroke="currentColor" width="16" height="16">
+                      <path d="M12 2v4m0 12v4m-8-10H2m20 0h-2m-2.93-6.07l-1.41 1.41m-9.32 9.32l-1.41 1.41m12.14 0l-1.41-1.41M6.34 6.34L4.93 4.93" stroke-width="2" stroke-linecap="round"/>
+                    </svg>
+                    <svg v-else-if="(block as ToolResultBlock).success" viewBox="0 0 24 24" fill="none" stroke="currentColor" width="16" height="16">
+                      <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                      <polyline points="22 4 12 14.01 9 11.01" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                    <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" width="16" height="16">
+                      <circle cx="12" cy="12" r="10" stroke-width="2"/>
+                      <line x1="15" y1="9" x2="9" y2="15" stroke-width="2" stroke-linecap="round"/>
+                      <line x1="9" y1="9" x2="15" y2="15" stroke-width="2" stroke-linecap="round"/>
+                    </svg>
+                  </span>
+                  <span class="tool-result-name">{{ (block as ToolResultBlock).toolName }}</span>
+                  <span class="tool-result-status">
+                    {{ (block as ToolResultBlock).isLoading ? '执行中...' : ((block as ToolResultBlock).success ? '成功' : '失败') }}
+                  </span>
+                </div>
+                <div class="tool-result-content">
+                  <pre>{{ (block as ToolResultBlock).result }}</pre>
+                </div>
+              </div>
+
               <!-- 图片块（截图结果） -->
               <div v-else-if="block.type === 'image'" class="image-block">
                 <div class="image-container">
@@ -373,7 +400,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, nextTick, watch } from 'vue'
-import type { StreamMessage, ToolUseBlock, ContentBlock } from '../utils/types'
+import type { StreamMessage, ToolUseBlock, ToolResultBlock, ContentBlock } from '../utils/types'
 import type { PageContext, PageAction, ActionResult, BatchActionResult } from '../utils/pageActionTypes'
 import { browserToolService } from '../utils/browserToolService'
 
@@ -900,14 +927,28 @@ const sendScreenshotResult = async (toolName: string, resultObj: any) => {
 
 // 发送浏览器工具执行结果给后端（作为 user 消息）
 const sendBrowserToolResultAsUser = async (toolName: string, result: string, resultSummary: string) => {
-  // 添加一个用户消息显示工具执行结果
-  const userResultMessage: StreamMessage = {
+  // 解析结果判断成功/失败
+  let isSuccess = true
+  try {
+    const parsed = JSON.parse(result)
+    isSuccess = parsed.success !== false
+  } catch {
+    // 解析失败默认成功
+  }
+
+  // 添加一个工具结果消息
+  const toolResultMessage: StreamMessage = {
     sessionId: currentSessionId.value,
-    role: 'user',
-    blocks: [{ type: 'text', text: `[工具 ${toolName} 执行结果]: ${resultSummary}` }],
+    role: 'assistant',
+    blocks: [{
+      type: 'tool_result',
+      toolName: toolName,
+      success: isSuccess,
+      result: resultSummary
+    } as ToolResultBlock],
     createdAt: Date.now()
   }
-  streamMessages.value.push(userResultMessage)
+  streamMessages.value.push(toolResultMessage)
   nextTick(scrollToBottom)
 
   // 发送给后端
@@ -1372,11 +1413,14 @@ const handleNonBrowserToolApproved = async (toolId: string) => {
         if (data.role === 'tool') {
           toolResultContent += data.content || ''
           console.log('[NonBrowserTool] 收集工具执行结果:', toolResultContent)
-          // 显示在界面上
-          const textBlock = streamMessages.value[messageIndex].blocks.find(b => b.type === 'text')
-          if (textBlock && textBlock.type === 'text') {
-            textBlock.text = `[工具执行中...] ${toolResultContent.substring(0, 100)}...`
-          }
+          // 显示工具执行中状态
+          streamMessages.value[messageIndex].blocks = [{
+            type: 'tool_result',
+            toolName: pendingToolCall?.name || '工具',
+            success: true,
+            result: toolResultContent.substring(0, 100) + (toolResultContent.length > 100 ? '...' : ''),
+            isLoading: true
+          } as ToolResultBlock]
           nextTick(scrollToBottom)
           return  // 不继续处理其他逻辑
         }
@@ -1426,9 +1470,12 @@ const handleNonBrowserToolApproved = async (toolId: string) => {
           console.log('[NonBrowserTool] 检测到工具结果，继续发送请求...')
           // 更新当前消息显示工具结果
           streamMessages.value[messageIndex].blocks = [{
-            type: 'text',
-            text: `[工具执行结果]: ${toolResultContent.substring(0, 200)}${toolResultContent.length > 200 ? '...' : ''}`
-          }]
+            type: 'tool_result',
+            toolName: pendingToolCall?.name || '工具',
+            success: true,
+            result: toolResultContent.substring(0, 200) + (toolResultContent.length > 200 ? '...' : ''),
+            isLoading: false
+          } as ToolResultBlock]
           streamMessages.value[messageIndex].isComplete = true
           nextTick(scrollToBottom)
 
@@ -2545,6 +2592,147 @@ const cancelDelete = () => {
 
 .tool-params .json-null {
   color: #6c757d;
+}
+
+/* 工具执行结果块样式 */
+.tool-result-block {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+  margin: var(--space-2) 0;
+  transition: all var(--transition-base);
+}
+
+.tool-result-block.success {
+  border-left: 3px solid var(--success-500);
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.05) 0%, var(--bg-tertiary) 100%);
+}
+
+.tool-result-block.error {
+  border-left: 3px solid var(--error-500);
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.05) 0%, var(--bg-tertiary) 100%);
+}
+
+.tool-result-block.loading {
+  border-left: 3px solid var(--primary-500);
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.05) 0%, var(--bg-tertiary) 100%);
+}
+
+.tool-result-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.tool-result-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-full);
+  flex-shrink: 0;
+}
+
+.tool-result-block.success .tool-result-icon {
+  background: rgba(16, 185, 129, 0.15);
+  color: var(--success-500);
+}
+
+.tool-result-block.error .tool-result-icon {
+  background: rgba(239, 68, 68, 0.15);
+  color: var(--error-500);
+}
+
+.tool-result-block.loading .tool-result-icon {
+  background: rgba(59, 130, 246, 0.15);
+  color: var(--primary-500);
+}
+
+.tool-result-icon svg {
+  stroke: currentColor;
+}
+
+.tool-result-icon .spinning {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.tool-result-name {
+  font-weight: 600;
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+}
+
+.tool-result-status {
+  margin-left: auto;
+  font-size: var(--text-xs);
+  font-weight: 500;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+}
+
+.tool-result-block.success .tool-result-status {
+  background: rgba(16, 185, 129, 0.15);
+  color: var(--success-500);
+}
+
+.tool-result-block.error .tool-result-status {
+  background: rgba(239, 68, 68, 0.15);
+  color: var(--error-500);
+}
+
+.tool-result-block.loading .tool-result-status {
+  background: rgba(59, 130, 246, 0.15);
+  color: var(--primary-500);
+}
+
+.tool-result-content {
+  background: var(--bg-secondary);
+  border-radius: var(--radius-sm);
+  padding: var(--space-2) var(--space-3);
+  max-height: 150px;
+  overflow-y: auto;
+}
+
+.tool-result-content pre {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.5;
+}
+
+.tool-result-content::-webkit-scrollbar {
+  width: 4px;
+}
+
+.tool-result-content::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: var(--radius-full);
+}
+
+/* 暗色模式适配 */
+@media (prefers-color-scheme: dark) {
+  .tool-result-block.success {
+    background: linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, var(--bg-tertiary) 100%);
+  }
+
+  .tool-result-block.error {
+    background: linear-gradient(135deg, rgba(239, 68, 68, 0.1) 0%, var(--bg-tertiary) 100%);
+  }
+
+  .tool-result-block.loading {
+    background: linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, var(--bg-tertiary) 100%);
+  }
 }
 
 .tool-actions {
