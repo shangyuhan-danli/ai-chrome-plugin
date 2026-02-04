@@ -12,7 +12,7 @@
             <h3>AI Chat Assistant</h3>
             <div class="header-badges">
               <span v-if="selectedAgent" class="agent-badge" :title="selectedAgent.name">{{ selectedAgent.name }}</span>
-              <span v-if="currentModel" class="model-badge">{{ currentModel }}</span>
+              <!-- <span v-if="currentModel" class="model-badge">{{ currentModel }}</span> -->
             </div>
           </div>
         </div>
