@@ -647,11 +647,36 @@ class BrowserToolService {
    * 获取完整的工具定义列表（用于发送给后端）
    */
   getToolDefinitions(): BrowserToolDefinition[] {
-    return Array.from(this.tools.values()).map(tool => ({
-      name: tool.name,
-      description: tool.description,
-      parameters: tool.parameters
-    }))
+    return Array.from(this.tools.values()).map(tool => {
+      // 对 page_action 工具，临时隐藏 click 操作
+      if (tool.name === 'page_action') {
+        const filteredParams = JSON.parse(JSON.stringify(tool.parameters))
+        const actionEnum = filteredParams.properties?.actions?.items?.properties?.action?.enum
+        if (actionEnum) {
+          // 过滤掉 click 相关操作
+          filteredParams.properties.actions.items.properties.action.enum = actionEnum.filter(
+            (a: string) => a !== 'click'
+          )
+          // 同时更新 description，移除 click 相关描述
+          const desc = filteredParams.properties.actions.items.properties.action.description
+          if (desc) {
+            filteredParams.properties.actions.items.properties.action.description = desc
+              .replace(/, click\(点击\)/, '')
+              .replace(/click\(点击\), /, '')
+          }
+        }
+        return {
+          name: tool.name,
+          description: tool.description,
+          parameters: filteredParams
+        }
+      }
+      return {
+        name: tool.name,
+        description: tool.description,
+        parameters: tool.parameters
+      }
+    })
   }
 
   /**

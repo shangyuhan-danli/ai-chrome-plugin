@@ -91,7 +91,7 @@ chrome.runtime.onConnect.addListener((port) => {
       const chatRequest: ChatStreamRequest = {
         message,
         role: role || 'user',
-        model: model || 'claude-3-opus',
+        model: model || 'deepseek',
         agent_id: agentId,
         session_id: sessionUUID,
         user_id: userId || 'default_user',
@@ -254,7 +254,7 @@ async function handleMessage(message: ChromeMessage, sender: chrome.runtime.Mess
             result: toolResponse.result || ''
           }),
           role: 'function',
-          model: toolModel || 'claude-3-opus',
+          model: toolModel || 'deepseek',
           agent_id: toolAgentId || '',
           session_id: toolSessionUUID,
           user_id: toolUserId || 'default_user'
@@ -367,7 +367,7 @@ async function getFullResponse(
     const request: ChatStreamRequest = {
       message,
       role: 'user',
-      model: model || 'claude-3-opus',
+      model: model || 'deepseek',
       agent_id: agentId,
       session_id: sessionUUID,
       user_id: userId || 'default_user'
