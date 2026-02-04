@@ -975,10 +975,12 @@ const sendBrowserToolResultAsUser = async (toolName: string, result: string, res
   let lastCompleteMessage: any = null
 
   try {
-    // 获取最新的页面上下文
-    const pageContext = await getPageContext()
+    // 使用缓存的页面上下文，避免重新收集导致 elementMap 被清空
+    // 这样后续的工具调用仍然可以通过 ID 找到元素
+    const pageContext = cachedPageContext.value
 
     const port = chrome.runtime.connect({ name: 'chat-stream' })
+    currentPort.value = port
 
     port.onMessage.addListener(async (msg) => {
       if (msg.type === 'data') {
@@ -1279,8 +1281,9 @@ const sendStreamMessage = async (content: string) => {
       }
     })
 
-    // 获取页面上下文
+    // 获取页面上下文并缓存
     const pageContext = await getPageContext(content)
+    cachedPageContext.value = pageContext
 
     // 获取浏览器工具定义
     const browserTools = browserToolService.getToolDefinitions()

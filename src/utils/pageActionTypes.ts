@@ -37,6 +37,7 @@ export interface PageElement {
 export interface CompactElement {
   id: string
   desc: string       // 合并的描述: "输入框:用户名" / "按钮:登录"
+  selector?: string  // 稳定的CSS选择器（备用定位方式，当elementId失效时使用）
   // 新增：上下文信息（可选，用于复杂场景）
   ctx?: {
     section?: string  // 区域/分组标题

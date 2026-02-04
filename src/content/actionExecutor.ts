@@ -53,39 +53,8 @@ async function fillInput(target: PageAction['target'], value?: string): Promise<
     return { success: false, message: '未提供填充值', error: 'NO_VALUE' }
   }
 
-  // 首先尝试通过 elementId 查找
-  let el = target.elementId ? getElementById(target.elementId) : null
-  let elementInfo: PageElement | null = null
-
-  // 如果 elementId 查找失败，尝试智能重定位
-  if (!el) {
-    console.log('[ActionExecutor] elementId 查找失败，尝试智能重定位')
-    
-    // 尝试使用 selector
-    if (target.selector) {
-      el = document.querySelector(target.selector) as HTMLElement
-    }
-
-    // 如果 selector 也失败，使用描述信息重定位
-    if (!el && target.description) {
-      // 这里需要从 elementCollector 获取原始元素信息
-      // 暂时使用描述文本进行语义匹配
-      const inputs = Array.from(document.querySelectorAll('input, textarea')) as HTMLElement[]
-      for (const input of inputs) {
-        const text = [
-          (input as HTMLInputElement).placeholder,
-          input.getAttribute('aria-label'),
-          (input as HTMLInputElement).name,
-          getAssociatedLabelText(input)
-        ].filter(Boolean).join(' ').toLowerCase()
-        
-        if (text.includes(target.description.toLowerCase())) {
-          el = input
-          break
-        }
-      }
-    }
-  }
+  // 使用智能查找函数
+  const el = findElement(target, 'input')
 
   if (!el) {
     return { success: false, message: '未找到目标元素', error: 'ELEMENT_NOT_FOUND' }
@@ -101,14 +70,6 @@ async function fillInput(target: PageAction['target'], value?: string): Promise<
       return { success: true, message: `已填充: ${value}` }
     }
     return { success: false, message: '目标元素不是输入框', error: 'INVALID_ELEMENT' }
-  }
-
-  // 验证元素（如果提供了 elementInfo）
-  if (elementInfo) {
-    const validation = validateElement(el, elementInfo)
-    if (!validation.valid && validation.confidence < 50) {
-      console.warn(`[ActionExecutor] 元素验证置信度较低: ${validation.confidence}%, ${validation.reason}`)
-    }
   }
 
   simulateInput(el as HTMLInputElement | HTMLTextAreaElement, value)
@@ -134,19 +95,87 @@ function getAssociatedLabelText(el: HTMLElement): string | undefined {
 }
 
 /**
+ * 智能查找元素 - 支持多种定位策略
+ * 优先级：elementId > selector > description语义匹配
+ */
+function findElement(target: PageAction['target'], expectedTag?: string): HTMLElement | null {
+  // 1. 首先尝试通过 elementId 查找
+  if (target.elementId) {
+    const el = getElementById(target.elementId)
+    if (el) {
+      // 验证元素是否仍然在DOM中
+      if (document.contains(el)) {
+        return el
+      }
+      console.log('[ActionExecutor] elementId 对应的元素已不在DOM中')
+    } else {
+      console.log('[ActionExecutor] elementId 查找失败，尝试其他方式')
+    }
+  }
+
+  // 2. 尝试使用 selector
+  if (target.selector) {
+    try {
+      const el = document.querySelector(target.selector) as HTMLElement
+      if (el) {
+        // 如果指定了期望的标签，进行验证
+        if (!expectedTag || el.tagName.toLowerCase() === expectedTag) {
+          return el
+        }
+        console.log(`[ActionExecutor] selector找到的元素标签不匹配: 期望${expectedTag}, 实际${el.tagName.toLowerCase()}`)
+      }
+    } catch (e) {
+      console.warn('[ActionExecutor] selector 查询失败:', e)
+    }
+  }
+
+  // 3. 使用描述信息进行语义匹配
+  if (target.description) {
+    const tagSelector = expectedTag || 'input, textarea, button, a, select'
+    const candidates = Array.from(document.querySelectorAll(tagSelector)) as HTMLElement[]
+    
+    for (const candidate of candidates) {
+      // 检查元素是否可见
+      const style = window.getComputedStyle(candidate)
+      if (style.display === 'none' || style.visibility === 'hidden') {
+        continue
+      }
+
+      // 收集元素的文本信息
+      const text = [
+        (candidate as HTMLInputElement).placeholder,
+        candidate.getAttribute('aria-label'),
+        (candidate as HTMLInputElement).name,
+        candidate.textContent?.trim(),
+        getAssociatedLabelText(candidate)
+      ].filter(Boolean).join(' ').toLowerCase()
+      
+      const descLower = target.description.toLowerCase()
+      
+      // 检查是否包含关键词
+      if (text.includes(descLower)) {
+        return candidate
+      }
+      
+      // 分词匹配（对于中文更有效）
+      const descWords = descLower.split(/[\s,，。.!！?？、]+/).filter(w => w.length > 1)
+      const matchCount = descWords.filter(word => text.includes(word)).length
+      if (matchCount >= descWords.length * 0.5) { // 至少匹配50%的关键词
+        return candidate
+      }
+    }
+  }
+
+  return null
+}
+
+/**
  * 点击元素
  */
 async function clickElement(target: PageAction['target']): Promise<ActionResult> {
-  const el = target.elementId ? getElementById(target.elementId) : null
+  const el = findElement(target)
 
   if (!el) {
-    if (target.selector) {
-      const selectorEl = document.querySelector(target.selector) as HTMLElement
-      if (selectorEl) {
-        simulateClick(selectorEl)
-        return { success: true, message: '已点击元素' }
-      }
-    }
     return { success: false, message: '未找到目标元素', error: 'ELEMENT_NOT_FOUND' }
   }
 
@@ -180,7 +209,7 @@ async function highlightText(target: PageAction['target'], color?: string): Prom
   }
 
   // 如果指定了元素
-  const el = target.elementId ? getElementById(target.elementId) : null
+  const el = findElement(target)
   if (el) {
     el.style.backgroundColor = highlightColor
     el.classList.add('ai-highlight')
@@ -212,7 +241,7 @@ async function underlineText(target: PageAction['target']): Promise<ActionResult
     }
   }
 
-  const el = target.elementId ? getElementById(target.elementId) : null
+  const el = findElement(target)
   if (el) {
     el.style.textDecoration = 'underline'
     el.style.textDecorationColor = '#1a73e8'
@@ -231,15 +260,9 @@ async function selectOption(target: PageAction['target'], value?: string): Promi
     return { success: false, message: '未提供选择值', error: 'NO_VALUE' }
   }
 
-  const el = target.elementId ? getElementById(target.elementId) : null
+  const el = findElement(target, 'select')
 
   if (!el || el.tagName !== 'SELECT') {
-    if (target.selector) {
-      const selectorEl = document.querySelector(target.selector) as HTMLSelectElement
-      if (selectorEl && selectorEl.tagName === 'SELECT') {
-        return doSelect(selectorEl, value)
-      }
-    }
     return { success: false, message: '未找到下拉框元素', error: 'ELEMENT_NOT_FOUND' }
   }
 
@@ -272,17 +295,9 @@ function doSelect(select: HTMLSelectElement, value: string): ActionResult {
  * 勾选复选框
  */
 async function checkBox(target: PageAction['target']): Promise<ActionResult> {
-  const el = target.elementId ? getElementById(target.elementId) : null
+  const el = findElement(target, 'input')
 
   if (!el) {
-    if (target.selector) {
-      const selectorEl = document.querySelector(target.selector) as HTMLInputElement
-      if (selectorEl && selectorEl.type === 'checkbox') {
-        selectorEl.checked = !selectorEl.checked
-        selectorEl.dispatchEvent(new Event('change', { bubbles: true }))
-        return { success: true, message: selectorEl.checked ? '已勾选' : '已取消勾选' }
-      }
-    }
     return { success: false, message: '未找到复选框元素', error: 'ELEMENT_NOT_FOUND' }
   }
 
@@ -583,16 +598,9 @@ async function waitFor(target?: PageAction['target'], timeout?: number, conditio
  * 聚焦元素
  */
 async function focusElement(target: PageAction['target']): Promise<ActionResult> {
-  const el = target.elementId ? getElementById(target.elementId) : null
+  const el = findElement(target)
 
   if (!el) {
-    if (target.selector) {
-      const selectorEl = document.querySelector(target.selector) as HTMLElement
-      if (selectorEl) {
-        selectorEl.focus()
-        return { success: true, message: '已聚焦元素' }
-      }
-    }
     return { success: false, message: '未找到目标元素', error: 'ELEMENT_NOT_FOUND' }
   }
 
@@ -604,16 +612,9 @@ async function focusElement(target: PageAction['target']): Promise<ActionResult>
  * 失焦元素
  */
 async function blurElement(target: PageAction['target']): Promise<ActionResult> {
-  const el = target.elementId ? getElementById(target.elementId) : null
+  const el = findElement(target)
 
   if (!el) {
-    if (target.selector) {
-      const selectorEl = document.querySelector(target.selector) as HTMLElement
-      if (selectorEl) {
-        selectorEl.blur()
-        return { success: true, message: '已失焦元素' }
-      }
-    }
     return { success: false, message: '未找到目标元素', error: 'ELEMENT_NOT_FOUND' }
   }
 
@@ -625,18 +626,9 @@ async function blurElement(target: PageAction['target']): Promise<ActionResult> 
  * 清空输入框
  */
 async function clearInput(target: PageAction['target']): Promise<ActionResult> {
-  const el = target.elementId ? getElementById(target.elementId) : null
+  const el = findElement(target, 'input')
 
   if (!el) {
-    if (target.selector) {
-      const selectorEl = document.querySelector(target.selector) as HTMLInputElement | HTMLTextAreaElement
-      if (selectorEl && (selectorEl.tagName === 'INPUT' || selectorEl.tagName === 'TEXTAREA')) {
-        selectorEl.value = ''
-        selectorEl.dispatchEvent(new Event('input', { bubbles: true }))
-        selectorEl.dispatchEvent(new Event('change', { bubbles: true }))
-        return { success: true, message: '已清空输入框' }
-      }
-    }
     return { success: false, message: '未找到目标元素', error: 'ELEMENT_NOT_FOUND' }
   }
 

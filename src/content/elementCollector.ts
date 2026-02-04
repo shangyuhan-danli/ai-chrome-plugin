@@ -1,8 +1,12 @@
 // 元素采集器 - 扫描页面，提取可交互元素
 import type { PageElement, CompactElement, PageContext, FilterStrategy } from '../utils/pageActionTypes'
+import { generateStableLocators } from './elementLocator'
 
 // 元素 ID 到 DOM 元素的映射
 const elementMap = new Map<string, HTMLElement>()
+
+// DOM 元素到 elementId 的反向映射（用于复用已存在的ID）
+const elementToIdMap = new WeakMap<HTMLElement, string>()
 
 // 调试：打印 elementMap 状态
 export function debugElementMap(): void {
@@ -362,10 +366,21 @@ function collectElementInfo(el: HTMLElement): PageElement | null {
   }
 
   const rect = el.getBoundingClientRect()
-  const id = generateElementId()
-
-  // 保存映射
-  elementMap.set(id, el)
+  
+  // 检查这个元素是否已经有elementId（复用ID，避免同一元素生成多个ID）
+  let id = elementToIdMap.get(el)
+  if (!id) {
+    // 生成新的ID
+    id = generateElementId()
+    // 保存双向映射
+    elementMap.set(id, el)
+    elementToIdMap.set(el, id)
+  } else {
+    // 复用已有ID，但确保elementMap中的映射仍然有效
+    if (!elementMap.has(id) || elementMap.get(id) !== el) {
+      elementMap.set(id, el)
+    }
+  }
 
   const element: PageElement = {
     id,
@@ -431,14 +446,43 @@ function collectElementInfo(el: HTMLElement): PageElement | null {
 }
 
 /**
+ * 清理无效的元素映射（元素已不在DOM中）
+ */
+function cleanupInvalidElements(): void {
+  const invalidIds: string[] = []
+  
+  elementMap.forEach((el, id) => {
+    // 检查元素是否仍在DOM中
+    if (!document.contains(el)) {
+      invalidIds.push(id)
+      // 注意：WeakMap 会自动清理，不需要手动删除
+    }
+  })
+  
+  // 移除无效的元素
+  invalidIds.forEach(id => {
+    elementMap.delete(id)
+  })
+  
+  if (invalidIds.length > 0) {
+    console.log(`[ElementCollector] 清理了 ${invalidIds.length} 个无效元素`)
+  }
+}
+
+/**
  * 采集所有可交互元素
  */
 export function collectInteractiveElements(): PageElement[] {
-  // 清空旧的映射
-  elementMap.clear()
-  console.log('[ElementCollector] 开始采集元素，已清空 elementMap')
+  // 先清理无效的元素映射，而不是完全清空
+  // 这样可以保留仍然有效的 elementId，避免 AI 使用的 elementId 突然失效
+  cleanupInvalidElements()
+  
+  console.log(`[ElementCollector] 开始采集元素，当前 elementMap 大小: ${elementMap.size}`)
 
   const elements: PageElement[] = []
+  
+  // 记录本次采集的元素ID，用于后续清理
+  const newElementIds = new Set<string>()
 
   // 可交互元素选择器 - 全面覆盖各种UI组件
   const selectors = [
@@ -524,8 +568,29 @@ export function collectInteractiveElements(): PageElement[] {
     const info = collectElementInfo(el as HTMLElement)
     if (info) {
       elements.push(info)
+      newElementIds.add(info.id)
     }
   })
+
+  // 清理本次采集中未出现的旧元素（这些元素可能已经被移除或不再可见）
+  // 但保留最近采集的元素，避免在短时间内多次采集时清空有效元素
+  const staleIds: string[] = []
+  elementMap.forEach((el, id) => {
+    if (!newElementIds.has(id)) {
+      // 检查元素是否仍然在DOM中且可见
+      if (!document.contains(el) || !isElementVisible(el)) {
+        staleIds.push(id)
+      }
+    }
+  })
+  
+  staleIds.forEach(id => {
+    elementMap.delete(id)
+  })
+  
+  if (staleIds.length > 0) {
+    console.log(`[ElementCollector] 清理了 ${staleIds.length} 个过时元素`)
+  }
 
   console.log(`[ElementCollector] 采集完成，共 ${elements.length} 个元素，elementMap 大小: ${elementMap.size}`)
 
@@ -855,6 +920,27 @@ export function toCompactFormat(elements: PageElement[]): CompactElement[] {
     const compact: CompactElement = {
       id: el.id,
       desc: generateElementDescription(el, originalEl)
+    }
+
+    // 生成稳定的选择器作为备用定位方式
+    // 当elementId失效时，可以使用selector重定位元素
+    if (originalEl) {
+      const locators = generateStableLocators(el, originalEl)
+      // 优先使用selector类型的定位器（CSS选择器）
+      const selectorLocator = locators.find(l => l.type === 'selector')
+      if (selectorLocator) {
+        compact.selector = selectorLocator.value
+      } else {
+        // 如果没有selector类型的定位器，尝试生成一个简单的选择器
+        // 优先使用name属性（最稳定）
+        if (el.name) {
+          compact.selector = `${el.tag}[name="${el.name}"]`
+        } else if (el.ariaLabel) {
+          compact.selector = `${el.tag}[aria-label="${el.ariaLabel}"]`
+        } else if (el.type && el.tag === 'input') {
+          compact.selector = `input[type="${el.type}"]`
+        }
+      }
     }
 
     // 添加上下文信息 - 帮助 AI 区分相似元素
