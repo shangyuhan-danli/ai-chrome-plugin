@@ -489,6 +489,8 @@ const currentModel = ref('gpt-3.5-turbo')
 const streamingContent = ref('')
 const isStreaming = ref(false)
 const currentPort = ref<chrome.runtime.Port | null>(null)
+const messageListener = ref<((msg: any) => void) | null>(null)
+const isStopped = ref(false)
 
 // 页面上下文缓存
 const cachedPageContext = ref<PageContext | null>(null)
@@ -514,8 +516,8 @@ onMounted(async () => {
   const sid = urlParams.get('sessionId')
   if (sid) {
     currentSessionId.value = parseInt(sid)
-    // 只有当 URL 中有 sessionId 时才加载历史消息
-    await loadMessages()
+    // 不再自动加载历史消息，用户需要时可以点击历史会话查看
+    // await loadMessages()
   }
 
   // 获取当前页面信息
@@ -693,7 +695,7 @@ const loadMessages = async () => {
     streamMessages.value = []
     return
   }
-  
+
   const response = await chrome.runtime.sendMessage({
     type: 'GET_MESSAGES',
     payload: { sessionId: currentSessionId.value }
@@ -710,11 +712,22 @@ const loadMessages = async () => {
           blocks = []
         }
       }
+
+      // 历史消息中的工具调用状态应该标记为已完成（非 pending）
+      // 避免显示 Approve/Reject 按钮
+      blocks = blocks.map((block: any) => {
+        if (block.type === 'tool_use' && block.status === 'pending') {
+          return { ...block, status: 'approved' }
+        }
+        return block
+      })
+
       return {
         ...msg,
         blocks: blocks,
         id: msg.id || msg.createdAt || Date.now(),
-        createdAt: msg.createdAt || Date.now()
+        createdAt: msg.createdAt || Date.now(),
+        isComplete: true  // 历史消息都是已完成的
       }
     })
     nextTick(scrollToBottom)
@@ -1002,7 +1015,12 @@ const sendBrowserToolResultAsUser = async (toolName: string, result: string, res
     const port = chrome.runtime.connect({ name: 'chat-stream' })
     currentPort.value = port
 
-    port.onMessage.addListener(async (msg) => {
+    const listener = async (msg: any) => {
+      // 如果已停止，忽略后续消息
+      if (isStopped.value) {
+        return
+      }
+
       if (msg.type === 'data') {
         const data = msg.data
         lastCompleteMessage = data
@@ -1083,7 +1101,9 @@ const sendBrowserToolResultAsUser = async (toolName: string, result: string, res
         isStreaming.value = false
         port.disconnect()
       }
-    })
+    }
+
+    port.onMessage.addListener(listener)
 
     // 发送工具执行结果作为 user 消息
     port.postMessage({
@@ -1176,6 +1196,7 @@ const markPendingToolAsRejected = () => {
 const sendStreamMessage = async (content: string) => {
   isStreaming.value = true
   streamingContent.value = ''
+  isStopped.value = false
 
   // 添加一个空的 assistant 消息用于显示流式内容
   const assistantMessage: ExtendedStreamMessage = {
@@ -1194,7 +1215,13 @@ const sendStreamMessage = async (content: string) => {
     const port = chrome.runtime.connect({ name: 'chat-stream' })
     currentPort.value = port
 
-    port.onMessage.addListener((msg) => {
+    // 创建消息监听器
+    const listener = (msg: any) => {
+      // 如果已停止，忽略后续消息
+      if (isStopped.value) {
+        return
+      }
+
       // 调试：打印收到的消息
       console.log('[Chat Stream] 收到消息:', msg)
 
@@ -1288,8 +1315,13 @@ const sendStreamMessage = async (content: string) => {
 
         port.disconnect()
         currentPort.value = null
+        messageListener.value = null
         nextTick(scrollToBottom)
       } else if (msg.type === 'error') {
+        // 如果已停止，忽略错误消息
+        if (isStopped.value) {
+          return
+        }
         console.error('流式响应错误:', msg.error)
         const textBlock = streamMessages.value[messageIndex].blocks.find(b => b.type === 'text')
         if (textBlock && textBlock.type === 'text') {
@@ -1298,8 +1330,13 @@ const sendStreamMessage = async (content: string) => {
         isStreaming.value = false
         port.disconnect()
         currentPort.value = null
+        messageListener.value = null
       }
-    })
+    }
+
+    // 保存监听器引用
+    messageListener.value = listener
+    port.onMessage.addListener(listener)
 
     // 获取页面上下文并缓存
     const pageContext = await getPageContext(content)
@@ -1326,15 +1363,28 @@ const sendStreamMessage = async (content: string) => {
     }
     isStreaming.value = false
     currentPort.value = null
+    messageListener.value = null
   }
 }
 
 // 停止流式响应
 const stopStreaming = () => {
+  // 设置停止标志，防止监听器继续处理消息
+  isStopped.value = true
+
+  // 移除消息监听器
+  if (currentPort.value && messageListener.value) {
+    currentPort.value.onMessage.removeListener(messageListener.value)
+    messageListener.value = null
+  }
+
+  // 断开连接
   if (currentPort.value) {
     currentPort.value.disconnect()
     currentPort.value = null
   }
+
+  // 更新状态
   isStreaming.value = false
 
   // 标记最后一条消息为已完成，并保留当前内容
@@ -1349,8 +1399,12 @@ const stopStreaming = () => {
         } else if (lastMsg.blocks.length === 0) {
           lastMsg.blocks.push({ type: 'text', text: streamingContent.value + ' [已停止]' })
         }
+      } else if (lastMsg.blocks.length === 0) {
+        // 如果没有内容，添加一个提示
+        lastMsg.blocks.push({ type: 'text', text: '[已停止]' })
       }
       lastMsg.isComplete = true
+      nextTick(scrollToBottom)
     }
   }
 }
@@ -1458,8 +1512,14 @@ const handleNonBrowserToolApproved = async (toolId: string) => {
 
   try {
     const port = chrome.runtime.connect({ name: 'chat-stream' })
+    currentPort.value = port
 
-    port.onMessage.addListener(async (msg) => {
+    const listener = async (msg: any) => {
+      // 如果已停止，忽略后续消息
+      if (isStopped.value) {
+        return
+      }
+
       console.log('[NonBrowserTool] 收到消息:', msg)
 
       if (msg.type === 'data') {
@@ -1582,9 +1642,12 @@ const handleNonBrowserToolApproved = async (toolId: string) => {
         isStreaming.value = false
         port.disconnect()
       }
-    })
+    }
 
-    const pageContext = await getPageContext()
+    port.onMessage.addListener(listener)
+
+    // 使用缓存的页面上下文，避免重新收集导致 elementMap 被清空
+    const pageContext = cachedPageContext.value
     const browserTools = browserToolService.getToolDefinitions()
 
     // 非浏览器工具：发 role: 'function' 给后端执行
@@ -1601,6 +1664,8 @@ const handleNonBrowserToolApproved = async (toolId: string) => {
   } catch (error) {
     console.error('处理工具响应失败:', error)
     isStreaming.value = false
+    currentPort.value = null
+    messageListener.value = null
   }
 }
 
@@ -1623,8 +1688,14 @@ const sendToolResultToBackend = async (toolId: string, result: string) => {
 
   try {
     const port = chrome.runtime.connect({ name: 'chat-stream' })
+    currentPort.value = port
 
-    port.onMessage.addListener((msg) => {
+    const listener = (msg: any) => {
+      // 如果已停止，忽略后续消息
+      if (isStopped.value) {
+        return
+      }
+
       console.log('[SendToolResult] 收到消息:', msg)
 
       if (msg.type === 'data') {
@@ -1708,9 +1779,12 @@ const sendToolResultToBackend = async (toolId: string, result: string) => {
         isStreaming.value = false
         port.disconnect()
       }
-    })
+    }
 
-    const pageContext = await getPageContext()
+    port.onMessage.addListener(listener)
+
+    // 使用缓存的页面上下文，避免重新收集导致 elementMap 被清空
+    const pageContext = cachedPageContext.value
     const browserTools = browserToolService.getToolDefinitions()
 
     // 发送空消息，role 为 user，让 AI 继续处理

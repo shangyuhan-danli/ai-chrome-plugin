@@ -169,7 +169,8 @@ onMounted(async () => {
     displayMode.value = response.data
   }
 
-  await loadMessages()
+  // 不再自动加载历史消息，用户需要时可以点击查看
+  // await loadMessages()
 
   window.addEventListener('message', (event) => {
     if (event.data.source === 'ai-chat-extension') {

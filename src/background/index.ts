@@ -110,15 +110,43 @@ chrome.runtime.onConnect.addListener((port) => {
           if (data.think && data.think.reasoning_content) {
             streamThink = data.think.reasoning_content
           }
+          // 收集工具调用信息
+          if (data.toolCall && data.toolCall.tool_name) {
+            try {
+              streamBlocks.push({
+                type: 'tool_use',
+                id: `tool_${Date.now()}`,
+                name: data.toolCall.tool_name,
+                input: JSON.parse(data.toolCall.arguments || '{}'),
+                status: 'pending'
+              })
+            } catch (e) {
+              console.error('解析工具参数失败:', e)
+            }
+          }
+          // 收集 answer 信息
+          if (data.answer && data.answer.result) {
+            streamBlocks.push({
+              type: 'summary',
+              text: data.answer.result
+            })
+          }
+          // 收集 ask 信息
+          if (data.ask && data.ask.question) {
+            streamBlocks.push({
+              type: 'question',
+              text: data.ask.question
+            })
+          }
           // 发送流式数据到前端
           port.postMessage({ type: 'data', data })
         },
         async () => {
           // 完成时保存 assistant 消息到本地数据库
           if (currentSessionId !== null) {
-            // 构建 blocks
-            if (streamContent) {
-              streamBlocks.push({ type: 'text', text: streamContent })
+            // 如果有文本内容且没有其他类型的 block，添加 text block
+            if (streamContent && !streamBlocks.some(b => b.type === 'summary' || b.type === 'question')) {
+              streamBlocks.unshift({ type: 'text', text: streamContent })
             }
             // 保存 assistant 消息（包含完整的 blocks 和 think）
             await chatDB.addMessage(
